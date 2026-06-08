@@ -95,7 +95,7 @@ abstract class ViewTreeActivity : AbstractLyricActivity() {
 
     private fun doResetSettings() {
         resetSettings()
-        if (LyriconApp.isSafeMode) finish()
+        if (LyriconApp.safeMode) finish()
     }
 
     abstract fun resetSettings()

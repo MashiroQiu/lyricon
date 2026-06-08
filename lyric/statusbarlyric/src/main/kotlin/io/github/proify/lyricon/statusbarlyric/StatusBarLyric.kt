@@ -10,7 +10,7 @@ import android.animation.LayoutTransition
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.Context
-import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.Handler
 import android.util.Log
 import android.view.Gravity
@@ -29,10 +29,11 @@ import io.github.proify.lyricon.lyric.style.LogoStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.view.LayoutTransitionX
 import io.github.proify.lyricon.lyric.view.LyricPlayerView
+import io.github.proify.lyricon.lyric.view.RichLyricLineView
+import io.github.proify.lyricon.lyric.view.visibleIfChanged
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric.LyricType.NONE
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric.LyricType.SONG
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric.LyricType.TEXT
-import io.github.proify.lyricon.statusbarlyric.logo.SuperLogo
 
 @SuppressLint("ViewConstructor")
 class StatusBarLyric(
@@ -44,6 +45,7 @@ class StatusBarLyric(
     companion object {
         const val VIEW_TAG: String = "lyricon:lyric_view"
         private const val TAG = "StatusBarLyric"
+
     }
 
     val logoView: SuperLogo = SuperLogo(context).apply {
@@ -86,6 +88,21 @@ class StatusBarLyric(
     private var currentStyle: LyricStyle = initialStyle
     private var isPlaying: Boolean = false
     private var isOplusCapsuleShowing: Boolean = false
+    /** 当前超级岛的屏幕绝对坐标 Rect，null 表示岛不存在 */
+    private var miuiIslandRect: Rect? = null
+    /**
+     * 用户主动隐藏歌词（切换到时钟模式或横屏）。
+     * true 时 updateVisibility() 强制返回 false，防止播放状态回调覆盖此决定。
+     * 通过 setUserHideLyric() 设置，保证每次变更都触发 updateVisibility()。
+     */
+    private var userHideLyric: Boolean = false
+
+    /**
+     * 歌词容器所在父容器（时钟行 LinearLayout）的屏幕 X 坐标缓存。
+     * 在 onAttachedToWindow 的 post{} 里读取，确保布局已稳定。
+     * 初始值为 0，对应时钟行紧贴屏幕左边缘的标准情况，也是正确答案。
+     */
+    private var cachedContainerScreenLeft: Int = 0
 
     var onPlayingChanged: ((Boolean) -> Unit)? = null
 
@@ -147,38 +164,23 @@ class StatusBarLyric(
         })
     }
 
-    private val singleVisibilityLayoutTransition: LayoutTransition = LayoutTransitionX().apply {
-        setDuration(500)
-        addTransitionListener(object : LayoutTransition.TransitionListener {
-
-            override fun startTransition(
-                transition: LayoutTransition?, container: ViewGroup?,
-                view: View?, transitionType: Int
-            ) = Unit
-
-            override fun endTransition(
-                transition: LayoutTransition?, container: ViewGroup?,
-                view: View?, transitionType: Int
-            ) {
-                disableTransitionType(LayoutTransition.CHANGING)
-                layoutTransition = null
-            }
-        })
-    }
-
     // TextView 子视图结构变化监听，用于刷新可见性
     private val textHierarchyChangeListener = object : OnHierarchyChangeListener {
         override fun onChildViewAdded(parent: View?, child: View?) = updateVisibility()
         override fun onChildViewRemoved(parent: View?, child: View?) = updateVisibility()
     }
 
-    // 歌词变化监听，用于重置超时逻辑
+    // 歌词变化监听，用于重置超时逻辑及岛存在时的动态宽度收窄
     private val lyricCountChangeListener =
         object : LyricPlayerView.LyricCountChangeListener {
 
             override fun onLyricTextChanged(old: String, new: String) {
                 currentLyric = new
                 refreshLyricTimeoutState()
+                // 岛存在时，歌词内容变化后触发容器宽度重算（幂等，只是重新设 maxWidth）。
+                if (miuiIslandRect != null) {
+                    post { updateWidthInternal(currentStyle) }
+                }
             }
 
             override fun onLyricChanged(
@@ -187,6 +189,10 @@ class StatusBarLyric(
             ) {
                 currentLyric = news.lastOrNull()?.text
                 refreshLyricTimeoutState()
+                // 同上：逐字歌词行切换时也触发宽度重算
+                if (miuiIslandRect != null) {
+                    post { updateWidthInternal(currentStyle) }
+                }
             }
         }
 
@@ -198,10 +204,9 @@ class StatusBarLyric(
 
         addView(
             textView,
-            LayoutParams(0, LayoutParams.WRAP_CONTENT)
-                .apply {
-                    weight = 1f
-                }
+            LayoutParams(0, LayoutParams.WRAP_CONTENT).apply {
+                weight = 1f
+            }
         )
 
         updateLogoLocation()
@@ -209,6 +214,17 @@ class StatusBarLyric(
 
         textView.setOnHierarchyChangeListener(textHierarchyChangeListener)
         textView.lyricCountChangeListeners += lyricCountChangeListener
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // 延迟一帧读取，确保 View 树第一次 layout 已完成，坐标稳定
+        post {
+            val loc = IntArray(2)
+            (parent as? View)?.getLocationOnScreen(loc)
+            cachedContainerScreenLeft = loc[0]
+            Log.d(TAG, "onAttachedToWindow: cachedContainerScreenLeft=$cachedContainerScreenLeft")
+        }
     }
 
     // --- 公开 API ---
@@ -261,31 +277,28 @@ class StatusBarLyric(
     fun isHideOnLockScreen() =
         currentStyle.basicStyle.hideOnLockScreen && keyguardManager.isKeyguardLocked
 
-    val enableEnterAnim get() = currentStyle.packageStyle.text.enableEnterAnim
-    private var lastDisabledVisible: Boolean = false
     fun updateVisibility() {
-        val shouldShow = isPlaying
+        // 用户主动切换到时钟模式时，强制不显示歌词，忽略播放状态
+        val shouldShow = !userHideLyric
+                && isPlaying
                 && !isHideOnLockScreen()
                 && textView.shouldShow()
                 && !lyricTimedOut
                 && !isDisabledVisible
 
-        if (shouldShow == isVisible) {
-            return
-        }
+        visibleIfChanged = shouldShow
 
-        if (enableEnterAnim && shouldShow && !lastDisabledVisible) {
-            isVisible = shouldShow
-            postDelayed({
-                triggerSingleVisibilityLayoutTransition()
-                logoView.forceHide = false
-            }, 0)
+        // Fix Bug1: 同步 logoView 的可见性与父容器保持一致，防止 SuperLogo 的自治逻辑在
+        // 父容器 GONE 后被外部事件独立唤醒（如样式更新、进度回调），导致"只剩 Logo"的异常现象。
+        // 父容器隐藏时强制将 logoView 一并隐藏；父容器恢复时让 logoView 按自身条件重新评估。
+        if (!shouldShow) {
+            logoView.visibleIfChanged = false
         } else {
-            isVisible = shouldShow
-            logoView.forceHide = enableEnterAnim && !shouldShow && !isDisabledVisible
+            logoView.updateVisibilityState()
         }
 
-        lastDisabledVisible = isDisabledVisible
+        Log.d(TAG, "updateVisibility: $shouldShow")
+        Log.d(TAG, "textVisibility: ${textView.isVisible}")
     }
 
     fun setSong(song: Song?) {
@@ -297,6 +310,7 @@ class StatusBarLyric(
     }
 
     fun setText(text: String?) {
+        Log.d(TAG, "setText: $text")
         lyricType = TEXT
         lastText = text
 
@@ -335,7 +349,23 @@ class StatusBarLyric(
         isOplusCapsuleShowing = visible
         triggerSingleTransition()
         updateWidthInternal(currentStyle)
-        logoView.isOplusCapsuleShowing = visible
+        logoView.oplusCapsuleShowing = visible
+    }
+
+    /**
+     * 设置用户主动隐藏歌词的状态（切换到时钟模式或横屏时调用）。
+     * 对应 1.0.32 fork 的 setUserHideLyric()，逻辑完全一致。
+     */
+    fun setUserHideLyric(hide: Boolean) {
+        if (userHideLyric == hide) return
+        userHideLyric = hide
+        updateVisibility()
+    }
+
+    fun setMiuiIslandRect(rect: Rect?) {
+        miuiIslandRect = rect
+        triggerSingleTransition()
+        updateWidthInternal(currentStyle)
     }
 
     // --- 内部逻辑 ---
@@ -368,14 +398,14 @@ class StatusBarLyric(
         val margins = basic.margins
         val paddings = basic.paddings
 
-        ensureLayoutParams().apply {
+        ensureMarginLayoutParams().apply {
             width = calculateContainerWidth(basic)
             leftMargin = margins.left.dp
             topMargin = margins.top.dp
             rightMargin = margins.right.dp
             bottomMargin = margins.bottom.dp
         }
-        updateTextViewWidthMode()
+        updateTextViewWidthMode(basic)
 
         updatePadding(
             paddings.left.dp,
@@ -387,27 +417,73 @@ class StatusBarLyric(
 
     private fun updateWidthInternal(style: LyricStyle) {
         val width = calculateContainerWidth(style.basicStyle)
-        ensureLayoutParams().width = width
+        ensureMarginLayoutParams().width = width
+        // 超级岛 / 胶囊存在时，强制 textView 用 weight=1 填满容器，
+        // 防止 dynamicWidthEnabled 场景下 WRAP_CONTENT 的 textView 溢出容器边界，
+        // 导致歌词文本戳入岛区域或把时钟顶出来。
+        // 岛消失后 updateTextViewWidthMode 会被 updateLayoutConfig 还原。
+        if (miuiIslandRect != null || isOplusCapsuleShowing) {
+            val lp = (textView.layoutParams as? LayoutParams)
+                ?: LayoutParams(0, LayoutParams.WRAP_CONTENT)
+            lp.width = 0
+            lp.weight = 1f
+            textView.layoutParams = lp
+        }
         requestLayout()
         Log.d(TAG, "updateWidthInternal: $width")
     }
 
     private fun calculateContainerWidth(basicStyle: BasicStyle): Int {
-        val isLandScape = isLandScape()
-        return basicStyle.getAutoWidth(isLandScape, isOplusCapsuleShowing).dp
+        // ColorOS 胶囊：走百分比预设限宽
+        if (isOplusCapsuleShowing) {
+            return calculateTargetWidth(basicStyle).dp
+        }
+        // 小米超级岛：用岛的实际 islandLeft 动态计算，精确避开岛区域
+        miuiIslandRect?.let { rect ->
+            return calculateIslandAwareWidth(rect)
+        }
+        return if (basicStyle.dynamicWidthEnabled) {
+            LayoutParams.WRAP_CONTENT
+        } else {
+            calculateTargetWidth(basicStyle).dp
+        }
     }
 
-    private fun updateTextViewWidthMode() {
+    /**
+     * 根据岛的实际屏幕坐标动态计算歌词容器宽度。
+     *
+     * 有岛时：容器固定为 maxWidth（岛左边缘到容器左边缘），不做收窄预测。
+     * 宽度是否溢出由 LyricLineView.isOverflow() 每帧实时判断，参考版同款逻辑。
+     * 这样彻底避免了用旧歌词宽度预先收窄容器，导致新歌词误判溢出的竞态问题。
+     */
+    private fun calculateIslandAwareWidth(rect: Rect): Int {
+        val islandLeft = rect.left
+        val maxWidth = (islandLeft - cachedContainerScreenLeft).coerceAtLeast(1)
+        Log.d(TAG, "calculateIslandAwareWidth: islandLeft=$islandLeft cachedContainerScreenLeft=$cachedContainerScreenLeft maxWidth=$maxWidth")
+        return maxWidth
+    }
+
+    private fun updateTextViewWidthMode(basicStyle: BasicStyle) {
         val lp = (textView.layoutParams as? LayoutParams)
             ?: LayoutParams(0, LayoutParams.WRAP_CONTENT)
-        lp.width = 0
-        lp.weight = 1f
+        if (basicStyle.dynamicWidthEnabled) {
+            lp.width = LayoutParams.WRAP_CONTENT
+            lp.weight = 0f
+        } else {
+            lp.width = 0
+            lp.weight = 1f
+        }
         textView.layoutParams = lp
     }
 
-    private fun ensureLayoutParams(): LayoutParams {
-        val lp = layoutParams as? LayoutParams
-            ?: LayoutParams(
+    private fun calculateTargetWidth(basicStyle: BasicStyle) = when {
+        isOplusCapsuleShowing -> basicStyle.widthInColorOSCapsuleMode
+        else                  -> basicStyle.width
+    }
+
+    private fun ensureMarginLayoutParams(): MarginLayoutParams {
+        val lp = layoutParams as? MarginLayoutParams
+            ?: MarginLayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.MATCH_PARENT
             )
@@ -418,11 +494,6 @@ class StatusBarLyric(
     private fun triggerSingleTransition() {
         singleLayoutTransition.enableTransitionType(LayoutTransition.CHANGING)
         layoutTransition = singleLayoutTransition
-    }
-
-    private fun triggerSingleVisibilityLayoutTransition() {
-        singleVisibilityLayoutTransition.enableTransitionType(LayoutTransition.CHANGING)
-        layoutTransition = singleVisibilityLayoutTransition
     }
 
     private fun refreshLyricTimeoutState() {
@@ -474,14 +545,6 @@ class StatusBarLyric(
         lyricTimeoutTask?.let { mainHandler.removeCallbacks(it) }
         lyricTimeoutTask = null
     }
-
-    override fun onConfigurationChanged(newConfig: Configuration?) {
-        super.onConfigurationChanged(newConfig)
-        updateWidthInternal(currentStyle)
-    }
-
-    private fun isLandScape(): Boolean =
-        resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     private class PendingData(var position: Long = 0)
 

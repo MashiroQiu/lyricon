@@ -60,9 +60,9 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
-import top.yukonga.miuix.kmp.window.WindowBottomSheet
 
 private val MUSIC_APP_KEYWORDS =
     listOf("music", "audio", "player", "spotify", "youtube")
@@ -152,15 +152,14 @@ fun PackageSelectionBottomSheet(
         }
     }
 
-    WindowBottomSheet(
+    OverlayBottomSheet(
         show = show.value,
         modifier = Modifier,
-        title = stringResource(R.string.add_app_style),
+        title = stringResource(R.string.add_package_config),
         backgroundColor = MiuixTheme.colorScheme.surface,
         onDismissRequest = { show.value = false },
         outsideMargin = BottomSheetDefaults.outsideMargin,
         insideMargin = DpSize(0.dp, 0.dp),
-        enableNestedScroll = false,
         content = {
             Column {
                 PackageSearchBar(

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -23,14 +22,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.proify.android.extensions.formatToString
 import io.github.proify.lyricon.app.R
-import io.github.proify.lyricon.app.compose.custom.miuix.extra.OverlayDialog
+import io.github.proify.lyricon.app.compose.custom.miuix.extra.SuperDialog
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.TextButton
 
 @Composable
 fun RectFInputDialog(
     title: String? = null,
-    summary: String? = null,
     show: MutableState<Boolean>,
     initialLeft: Float = 0f,
     initialTop: Float = 0f,
@@ -51,9 +49,8 @@ fun RectFInputDialog(
         if (show.value) show.value = false
     }
 
-    OverlayDialog(
+    SuperDialog(
         title = title,
-        summary = summary,
         show = show.value,
         onDismissRequest = { dismiss() }
     ) {
@@ -62,16 +59,6 @@ fun RectFInputDialog(
         val topText = remember { mutableStateOf(initialTop.toDouble().formatToString()) }
         val rightText = remember { mutableStateOf(initialRight.toDouble().formatToString()) }
         val bottomText = remember { mutableStateOf(initialBottom.toDouble().formatToString()) }
-        val isValid = remember(maxValue, minValue) {
-            derivedStateOf {
-                listOf(leftText, topText, rightText, bottomText).all { state ->
-                    state.value.toDoubleOrNull()?.let { value ->
-                        (minValue == null || value >= minValue) &&
-                                (maxValue == null || value <= maxValue)
-                    } == true
-                }
-            }
-        }
 
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -85,8 +72,9 @@ fun RectFInputDialog(
                     label = stringResource(R.string.rect_left),
                     allowNegative = allowNegative,
                     allowDecimal = allowDecimal,
-                    autoSelectOnFocus = selectAllOnFocus,
-                    isError = !isValid.value,
+                    maxValue = maxValue,
+                    minValue = minValue,
+                    autoSelectOnFocus = selectAllOnFocus
                 )
 
                 NumberTextField(
@@ -96,8 +84,9 @@ fun RectFInputDialog(
                     label = stringResource(R.string.rect_top),
                     allowNegative = allowNegative,
                     allowDecimal = allowDecimal,
-                    autoSelectOnFocus = selectAllOnFocus,
-                    isError = !isValid.value,
+                    maxValue = maxValue,
+                    minValue = minValue,
+                    autoSelectOnFocus = selectAllOnFocus
                 )
             }
 
@@ -109,8 +98,9 @@ fun RectFInputDialog(
                     label = stringResource(R.string.rect_right),
                     allowNegative = allowNegative,
                     allowDecimal = allowDecimal,
-                    autoSelectOnFocus = selectAllOnFocus,
-                    isError = !isValid.value,
+                    maxValue = maxValue,
+                    minValue = minValue,
+                    autoSelectOnFocus = selectAllOnFocus
                 )
 
                 NumberTextField(
@@ -120,8 +110,9 @@ fun RectFInputDialog(
                     label = stringResource(R.string.rect_bottom),
                     allowNegative = allowNegative,
                     allowDecimal = allowDecimal,
-                    autoSelectOnFocus = selectAllOnFocus,
-                    isError = !isValid.value,
+                    maxValue = maxValue,
+                    minValue = minValue,
+                    autoSelectOnFocus = selectAllOnFocus
                 )
             }
         }
@@ -150,8 +141,7 @@ fun RectFInputDialog(
                     dismiss()
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                enabled = isValid.value,
+                colors = ButtonDefaults.textButtonColorsPrimary()
             )
         }
     }

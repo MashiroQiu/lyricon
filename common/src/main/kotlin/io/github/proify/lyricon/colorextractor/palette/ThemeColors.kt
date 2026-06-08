@@ -27,5 +27,4 @@ data class ThemeColors(
         result = 31 * result + swatches.contentHashCode()
         return result
     }
-
 }

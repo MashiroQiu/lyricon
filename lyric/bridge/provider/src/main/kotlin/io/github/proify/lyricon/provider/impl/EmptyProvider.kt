@@ -16,7 +16,6 @@ import io.github.proify.lyricon.provider.ProviderService
 import io.github.proify.lyricon.provider.RemotePlayer
 import io.github.proify.lyricon.provider.service.RemoteService
 
-/** 不支持当前运行环境时返回的提供端空实现。 */
 class EmptyProvider(override val providerInfo: ProviderInfo) : LyriconProvider {
     override val service: RemoteService = EmptyRemoteService
     override val player = service.player
@@ -42,8 +41,8 @@ class EmptyProvider(override val providerInfo: ProviderInfo) : LyriconProvider {
         override fun setPosition(position: Long): Boolean = false
         override fun setPositionUpdateInterval(interval: Int): Boolean = false
         override fun sendText(text: String?): Boolean = false
-        override fun setDisplayTranslation(isDisplayTranslation: Boolean): Boolean = false
-        override fun setDisplayRoma(isDisplayRoma: Boolean): Boolean = false
+        override fun setDisplayTranslation(displayTranslation: Boolean): Boolean = false
+        override fun setDisplayRoma(displayRoma: Boolean): Boolean = false
         override fun setPlaybackState(state: PlaybackState?): Boolean = false
     }
 }

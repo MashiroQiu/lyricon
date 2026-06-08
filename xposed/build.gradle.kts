@@ -9,7 +9,9 @@ plugins {
 configure<LibraryExtension> {
     namespace = "io.github.proify.lyricon.xposed"
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int)
+        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
+         //   minorApiLevel = 1
+        }
     }
 
     defaultConfig {
@@ -23,16 +25,6 @@ configure<LibraryExtension> {
             "APP_PACKAGE_NAME",
             "\"${rootProject.extra["appPackageName"] as String}\""
         )
-    }
-
-    flavorDimensions += "locale"
-    productFlavors {
-        create("standard") {
-            dimension = "locale"
-        }
-        create("zh") {
-            dimension = "locale"
-        }
     }
 
     buildTypes {
@@ -51,7 +43,6 @@ configure<LibraryExtension> {
 
     buildFeatures {
         buildConfig = true
-        aidl = true
     }
 }
 
@@ -63,13 +54,11 @@ dependencies {
     implementation(project(":lyric:style"))
     implementation(project(":lyric:statusbarlyric"))
     implementation(project(":lyric:bridge:central"))
-    "zhImplementation"(project(":opencc-lite"))
 
-    compileOnly(libs.libxposed.api)
-    implementation(libs.libxposed.service)
-
+    //implementation(libs.opencc4j)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
+    compileOnly(libs.xposed.api)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

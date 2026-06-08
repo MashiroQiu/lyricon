@@ -30,8 +30,7 @@ object AppLangUtils {
         Locale.setDefault(locale)
     }
 
-    fun getLocale(context: Context = LyriconApp.instance): Locale =
-        forLanguageTag(getCustomizeLang(context))
+    fun getLocale(): Locale = forLanguageTag(getCustomizeLang(LyriconApp.instance))
 
     private fun forLanguageTag(language: String): Locale {
         return if (language == DEFAULT_LANGUAGE) {

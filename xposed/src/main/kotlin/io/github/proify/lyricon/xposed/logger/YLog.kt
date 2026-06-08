@@ -9,70 +9,82 @@
 package io.github.proify.lyricon.xposed.logger
 
 import android.util.Log
-import io.github.libxposed.api.XposedInterface
+import de.robv.android.xposed.XposedBridge
 
-/**
- * 日志工具类
- * 优先使用 LSPosed 框架日志，回退到 Android Logcat
- */
 object YLog {
+    val processName: String? = null
     const val TAG = "Lyricon"
 
-    private var xposedInterface: XposedInterface? = null
-
-    /**
-     * 初始化日志系统
-     * @param ctx XposedInterface 实例（通常是 XposedModule）
-     */
-    fun init(ctx: XposedInterface) {
-        xposedInterface = ctx
-    }
+    private val logger = XposedLogger()
 
     fun info(tag: String, msg: String) {
-        log(Log.INFO, tag, msg)
+        logger.i(tag, msg)
     }
 
     fun debug(tag: String, msg: String) {
-        log(Log.DEBUG, tag, msg)
+        logger.d(tag, msg)
     }
 
     fun error(tag: String, msg: String) {
-        log(Log.ERROR, tag, msg)
+        logger.e(tag, msg)
     }
 
     fun verbose(tag: String, msg: String) {
-        log(Log.VERBOSE, tag, msg)
+        logger.v(tag, msg)
     }
 
     fun warning(tag: String, msg: String) {
-        log(Log.WARN, tag, msg)
+        logger.w(tag, msg)
     }
 
     fun error(tag: String, msg: String?, e: Throwable?) {
-        val xi = xposedInterface
-        if (xi != null) {
-            xi.log(Log.ERROR, TAG, buildMessage(tag, msg), e)
-        } else {
-            Log.e(TAG, buildMessage(tag, msg), e)
-        }
+        logger.e(tag, msg, e)
     }
 
-    private fun log(priority: Int, tag: String, msg: String) {
-        val xi = xposedInterface
-        if (xi != null) {
-            xi.log(priority, TAG, buildMessage(tag, msg))
-        } else {
-            when (priority) {
-                Log.VERBOSE -> Log.v(TAG, buildMessage(tag, msg))
-                Log.DEBUG -> Log.d(TAG, buildMessage(tag, msg))
-                Log.INFO -> Log.i(TAG, buildMessage(tag, msg))
-                Log.WARN -> Log.w(TAG, buildMessage(tag, msg))
-                Log.ERROR -> Log.e(TAG, buildMessage(tag, msg))
-            }
+    private class XposedLogger : ILogger {
+        override fun v(tag: String?, message: String?) {
+            XposedBridge.log(buildMessage(tag, "V", message))
         }
-    }
 
-    private fun buildMessage(tag: String, msg: String?): String {
-        return "[$tag] ${msg ?: ""}"
+        override fun d(tag: String?, message: String?) {
+            XposedBridge.log(buildMessage(tag, "D", message))
+        }
+
+        override fun w(tag: String?, message: String?) {
+            XposedBridge.log(buildMessage(tag, "W", message))
+        }
+
+        override fun i(tag: String?, message: String?) {
+            XposedBridge.log(buildMessage(tag, "I", message))
+        }
+
+        override fun e(tag: String?, message: String?, throwable: Throwable?) {
+            if (throwable != null) {
+                XposedBridge.log(
+                    buildMessage(
+                        tag,
+                        "E",
+                        if (message != null) {
+                            "$message: ${Log.getStackTraceString(throwable)}"
+                        } else {
+                            Log.getStackTraceString(throwable)
+                        }
+                    )
+                )
+            } else XposedBridge.log(buildMessage(tag, "E", message))
+        }
+
+        private fun buildMessage(
+            tag: String?,
+            level: String,
+            message: String?
+        ): String {
+            val tags = listOf(tag, level)
+            val tagString =
+                tags.filterNotNull().joinToString(prefix = "[", postfix = "]", separator = ",")
+
+            val logs = listOf(tagString, message)
+            return logs.filterNotNull().joinToString(separator = " ")
+        }
     }
 }

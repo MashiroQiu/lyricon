@@ -1,5 +1,4 @@
 <!--suppress ALL -->
-
 <p align="center">
   <img src="resources/logo.svg" width="100" alt="Lyricon Logo"/>
 </p>
@@ -7,7 +6,7 @@
 <h1 align="center">Lyricon</h1>
 
 <p align="center">
-  <b>An Android status bar lyric enhancement tool based on the Xposed framework</b>
+  <b>An Xposed-based Status Bar Lyric Enhancement Tool for Android</b>
 </p>
 
 <p align="center">
@@ -31,11 +30,11 @@
 
 ## ✨ Features
 
-- 🎤 **Lyric Display** — Supports word-by-word lyrics, translated lyrics, and duet mode.
-- 🧩 **Modular Design** — Supports extending lyric sources for different music players through an
-  independent plugin system.
-- 🎨 **Visual Customization** — Supports adjusting font styles, logo display, coordinate offsets, and
-  animation effects.
+- 🎤 **Lyric Display** — Supports word-by-word lyrics, translations, and duet modes.
+- 🧩 **Modular Design** — Extend lyric sources for various players through an independent plugin
+  system.
+- 🎨 **Visual Customization** — Adjust font styles, logos, coordinate offsets, and animations to fit
+  your UI.
 
 ---
 
@@ -43,51 +42,44 @@
 
 ### 📋 Requirements
 
-- **System Version**: Android 9.0 (API 28) or later.
-- **Prerequisites**: The device must have **Root** access and the **LSPosed** framework, or a
-  compatible Xposed framework, installed.
+- **System**: Android 8.1 (API 27) or higher.
+- **Prerequisites**: Device must be **Rooted** with the **LSPosed** (or compatible Xposed) framework
+  installed.
 
 > [!TIP]
-> For better stability, the latest stable version of LSPosed is recommended.
+> It is recommended to use the latest stable version of LSPosed for optimal compatibility.
 
-### ⚙️ Installation & Configuration
+### ⚙️ Installation & Setup
 
-1. **Download the Main App**: Download and install Lyricon
+1. **Download Main App**: Get the Lyricon app
    from [Releases](https://github.com/tomakino/lyricon/releases).
-2. **Activate the Module**: Enable the "Lyricon" module in LSPosed Manager and select the **System
-   UI** scope.
-3. **Restart to Apply**: Restart System UI or reboot the device to complete Hook injection.
-4. **Install Plugins**: Download the corresponding plugin
-   from [LyricProvider](https://github.com/tomakino/LyricProvider) according to the music player you
-   use.
-5. **Adjust Parameters**: Open the Lyricon app and adjust the position anchor, width, and visual
-   style according to your screen.
-6. **Test It**: Launch your music player and play music, then check whether lyrics are displayed
-   correctly in the status bar.
+2. **Activate Module**: Enable "Lyricon" in the LSPosed manager and ensure the **System UI** scope
+   is checked.
+3. **Apply Changes**: Restart System UI or reboot your device to complete the Hook injection.
+4. **Install Plugins**: Download the corresponding plugin for your music player
+   from [LyricProvider](https://github.com/tomakino/LyricProvider).
+5. **Configuration**: Open the Lyricon app to adjust position anchors, width, and visual styles.
+6. **Enjoy**: Play music and check your status bar for live lyrics.
 
 ---
 
 ## 🧩 Ecosystem & Support
 
-| Category           | Resource Link                                                         | Description                                       |
-|:-------------------|:----------------------------------------------------------------------|:--------------------------------------------------|
-| **Plugin Library** | [LyricProvider Repository](https://github.com/tomakino/LyricProvider) | Adaptation plugins for mainstream music platforms |
-| **Documentation**  | [Documentation Center](https://tomakino.github.io/lyricon/)           | App and Lyric documentation                       |
+| Category           | Links                                                                                                      | Description                                 |
+|:-------------------|:-----------------------------------------------------------------------------------------------------------|:--------------------------------------------|
+| **Plugin Library** | [LyricProvider Repo](https://github.com/tomakino/LyricProvider)                                            | Plugins for mainstream music platforms      |
+| **Development**    | [Dev Guide](https://github.com/tomakino/lyricon/blob/master/lyric/bridge/provider/README-EN.md)            | Learn how to build lyric provider plugins   |
+| **Subscription**   | [Subscription Guide](https://github.com/tomakino/lyricon/blob/master/lyric/bridge/subscriber/README-EN.md) | Methods for 3rd-party apps to access lyrics |
 
-### 💡 Natively Supported Apps
+### 💡 Native Support Apps
 
-- [**光锥音乐**](https://coneplayer.trantor.ink/)
+- [**ConePlayer**](https://coneplayer.trantor.ink/)
 - **Flamingo**
 - [**BBPlayer**](https://bbplayer.roitium.com/)
 - **MobiMusic**
 - [**Kanade**](https://github.com/rcmiku/Kanade)
 - **Sollin Player**
 - [**QZ Music**](https://github.com/lqtmcstudio/QZMusic)
-- [**棉花音乐**](https://github.com/pure-music/PureMusic)
-- [**Smart Music Next**](https://qun.qq.com/universal-share/share?ac=1&authKey=k1hftnugk%2Bx5FZnOePE2RTS%2ByBftX2E87Trhz59sfxtVtvC3nw1MXnlxycVUIPZw&busi_data=eyJncm91cENvZGUiOiIzMzA0NzM2OTYiLCJ0b2tlbiI6IlB0NWpkSW0zWTA0UXBCTHFFdjZ0SDBsN014aUVnTitxMllFUnlMV0JpdTJEem1sdDBvRWZEM2p0RXJGVUFpZTgiLCJ1aW4iOiIyOTIwNTMzMzczIn0%3D&data=388N05tm4gkrgDLeoysN-LIYOHsCk5mUfrcBBVE9UW3WyoWG_DxkLZqDttvrptZWN5VOQWvYBwZ7d3MgKUDmTg&svctype=4&tempid=h5_group_info)
-- [**LunaBeat**](https://github.com/2755337087/LunaBeat)
-
-#### Is your player already supported but not listed here? Please [submit an issue](https://github.com/tomakino/lyricon/issues).
 
 ---
 
@@ -111,7 +103,7 @@
 
 ---
 
-### 👀 Visit Statistics
+### 👀 Traffic
 
 <p align="center">
   <img src="https://count.getloli.com/get/@tomakino_lyricon?theme=minecraft" alt="Visitor Count" />

@@ -11,11 +11,6 @@ import androidx.annotation.IntRange
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
 
-/**
- * 远端播放器状态发送接口。
- *
- * 提供端通过该接口把歌曲、播放状态、播放位置和歌词显示配置同步给中心服务。
- */
 interface RemotePlayer {
 
     /**
@@ -50,19 +45,18 @@ interface RemotePlayer {
     fun seekTo(@IntRange(from = 0) position: Long): Boolean
 
     /**
-     * 更新播放位置到共享内存待读取区。
+     * 更新播放位置到待读取区
      *
-     * @param position 播放位置，单位毫秒，最小值为 0。
-     * @return 是否成功写入。
+     * @param position 播放位置，最小值为 0
      * @see setPositionUpdateInterval
      */
     fun setPosition(@IntRange(from = 0) position: Long): Boolean
 
     /**
-     * 设置中心服务读取播放位置的间隔，一般不用修改。
+     * 设置播放位置读取间隔，一般不用修改
      *
-     * @param interval 间隔毫秒数。
-     * @return 命令是否成功发送。
+     * @param interval 间隔毫秒数
+     * @return 操作是否成功
      */
     fun setPositionUpdateInterval(@IntRange(from = 0) interval: Int): Boolean
 
@@ -77,32 +71,27 @@ interface RemotePlayer {
     fun sendText(text: String?): Boolean
 
     /**
-     * 设置是否显示翻译。
+     * 设置显示翻译。
      *
-     * 如果 [RichLyricLine] 中有翻译信息，则中心服务可显示翻译内容。
+     * 如果[RichLyricLine] 中有翻译信息，则显示翻译。
      *
-     * @param isDisplayTranslation 是否显示翻译。
-     * @return 命令是否成功发送。
+     * @param displayTranslation 是否显示翻译
      */
-    fun setDisplayTranslation(isDisplayTranslation: Boolean): Boolean
+    fun setDisplayTranslation(displayTranslation: Boolean): Boolean
 
     /**
-     * 设置是否显示罗马音。
+     * 显示罗马音。
      *
-     * 如果 [RichLyricLine] 中有罗马音信息，则中心服务可显示罗马音内容。
+     * 如果[RichLyricLine] 中有罗马音信息，则显示罗马音。
      *
-     * @param isDisplayRoma 是否显示罗马音。
-     * @return 命令是否成功发送。
+     * @param displayRoma 是否显示罗马音
      */
-    fun setDisplayRoma(isDisplayRoma: Boolean): Boolean
+    fun setDisplayRoma(displayRoma: Boolean): Boolean
 
     /**
-     * 使用 [PlaybackState] 同步播放状态。
+     * 设置远程使用[PlaybackState]实现判断播放状态，计算播放位置。
      *
-     * 中心服务可根据 [PlaybackState.position]、播放速度和更新时间计算实时进度。
-     *
-     * @param state 播放状态，传入 `null` 表示停止使用该模式。
-     * @return 命令是否成功发送。
+     * @param state 播放状态
      */
     fun setPlaybackState(state: PlaybackState?): Boolean
 }

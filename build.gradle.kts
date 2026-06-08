@@ -5,21 +5,22 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    //alias(libs.plugins.ksp) apply false
     id("com.vanniktech.maven.publish") version "0.36.0" apply false
     alias(libs.plugins.jetbrains.kotlin.jvm) apply false
-    id("com.mikepenz.aboutlibraries.plugin.android") version "14.2.0" apply false
+    id("com.mikepenz.aboutlibraries.plugin.android") version "14.0.1" apply false
 }
 
 extra["appPackageName"] = "io.github.proify.lyricon"
-extra["appVersionCode"] = 43
-extra["appVersionName"] = "1.0.30-beta13"
+extra["appVersionCode"] = 50
+extra["appVersionName"] = "1.0.30-beta5-xy21"
 extra["compileSdkVersion"] = 37
 extra["targetSdkVersion"] = 37
-extra["minSdkVersion"] = 29
+extra["minSdkVersion"] = 28
 
-extra["providerSdkVersion"] = "0.1.71"
-extra["subscriberSdkVersion"] = "0.1.71"
-extra["lyricModelVersion"] = "0.1.71"
+extra["providerSdkVersion"] = "0.1.70"
+extra["subscriberSdkVersion"] = "0.1.70"
+extra["lyricModelVersion"] = "0.1.70"
 
 // apk自动导出
 /**

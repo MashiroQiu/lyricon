@@ -8,19 +8,22 @@ package io.github.proify.lyricon.lyric.view
 
 import android.content.Context
 import android.util.AttributeSet
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewTreeObserver
 import android.widget.LinearLayout
 import androidx.annotation.CallSuper
 import androidx.core.view.contains
 import androidx.core.view.forEach
+import androidx.core.view.forEachIndexed
 import androidx.core.view.isNotEmpty
+import androidx.core.view.isVisible
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.model.extensions.TimingNavigator
 import io.github.proify.lyricon.lyric.model.interfaces.IRichLyricLine
+import io.github.proify.lyricon.lyric.model.lyricMetadataOf
 import io.github.proify.lyricon.lyric.view.line.LyricLineView
-import io.github.proify.lyricon.lyric.view.yoyo.AnimSpeed
 import io.github.proify.lyricon.lyric.view.yoyo.YoYoPresets
 import io.github.proify.lyricon.lyric.view.yoyo.animateUpdate
 import java.util.concurrent.CopyOnWriteArraySet
@@ -33,24 +36,33 @@ open class LyricPlayerView(
     companion object {
         internal const val KEY_SONG_TITLE_LINE: String = "TitleLine"
         private const val MIN_GAP_DURATION: Long = 8 * 1000
-        //private const val TAG = "LyricPlayerView"
+        private const val TAG = "LyricPlayerView"
     }
 
+    // ---------- 私有常量 / 状态 ----------
     private var isTextMode = false
-    private var style = LyricViewStyle()
+    private var styleConfig = RichLyricLineConfig()
 
-    private var lineList: List<TimedLine>? = null
-    private var timingNavigator: TimingNavigator<TimedLine> = emptyNavigator()
-    private var interludeTracker = InterludeTracker(MIN_GAP_DURATION)
-    private var currentInterlude: InterludeTracker.Interlude? = null
-    private var isInInterlude = false
+    private var isEnableRelativeProgress = false
+    private var isEnableRelativeProgressHighlight = false
+    private var isEnteringInterludeMode = false
 
-    private val activeLines = mutableListOf<IRichLyricLine>()
-    private val textRecycleView by lazy { RichLyricLineView(context) }
-    private val defaultLp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+    // data models
+    private var lineModelList: List<RichLyricLineModel>? = null
+    private var timingNavigator: TimingNavigator<RichLyricLineModel> = emptyTimingNavigator()
+    private var currentInterludeState: InterludeState? = null
 
-    private val tempMatches = mutableListOf<TimedLine>()
+    // 视图缓存与临时集合
+    private val activeLyricLines = mutableListOf<IRichLyricLine>()
+    private val textRecycleLineView by lazy { RichLyricLineView(context) }
+    private val defaultLayoutParams =
+        LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
 
+    private val viewsToRemoveTemp = mutableListOf<RichLyricLineView>()
+    private val viewsToAddTemp = mutableListOf<IRichLyricLine>()
+    private val tempFoundActiveLines = mutableListOf<RichLyricLineModel>()
+
+    // 布局动画处理器
     private var layoutTransitionHandler: LayoutTransitionX? = null
 
     val lyricCountChangeListeners = CopyOnWriteArraySet<LyricCountChangeListener>()
@@ -65,12 +77,16 @@ open class LyricPlayerView(
         override fun onPlayStarted(view: LyricLineView) {
             view.visibleIfChanged = true; updateViewsVisibility()
         }
+
         override fun onPlayEnded(view: LyricLineView) = updateViewsVisibility()
         override fun onPlayProgress(view: LyricLineView, total: Float, progress: Float) {}
     }
 
-    private val globalLayoutListener =
-        ViewTreeObserver.OnGlobalLayoutListener { updateViewsVisibility() }
+    // 视图树监听器
+    private val viewTreeObserverListener =
+        ViewTreeObserver.OnGlobalLayoutListener {
+            updateViewsVisibility()
+        }
 
     init {
         orientation = VERTICAL
@@ -88,19 +104,39 @@ open class LyricPlayerView(
         set(value) {
             isTextMode = false
             if (value != null) {
-                val firstActive = activeLines.firstOrNull()
-                val exiting = firstActive.isTitleLine() && resolveTitle(value) == firstActive?.text
-                if (!exiting) reset()
+                val firstActiveLine = activeLyricLines.firstOrNull()
+                val isExitingPlaceholder =
+                    firstActiveLine.isTitleLine() && getSongTitle(value) == firstActiveLine?.text
 
-                val processor = SongPreprocessor(style.placeholder)
-                val lines = processor.prepare(value)
-                lineList = lines
-                timingNavigator = TimingNavigator(lines.toTypedArray())
+                if (!isExitingPlaceholder) reset()
+
+                val newSong = fillGapAtStart(value)
+                var previous: RichLyricLineModel? = null
+                lineModelList = newSong.lyrics?.map {
+                    RichLyricLineModel(it).apply {
+                        this.previous = previous
+                        previous?.next = this
+                        previous = this
+                    }
+                }
+
+//                if (isExitingPlaceholder) {
+//                    val firstLine = lineModelList?.firstOrNull()
+//                    if (firstLine != null && firstLine.isTitleLine()) {
+//                        activeLyricLines[0] = firstLine
+//                        val child = getChildAtOrNull(0) as? RichLyricLineView
+//                        child?.rawLine = firstLine
+//                    }
+//                }
+
+                timingNavigator = TimingNavigator(lineModelList?.toTypedArray() ?: emptyArray())
+
             } else {
                 reset()
-                lineList = null
-                timingNavigator = emptyNavigator()
+                lineModelList = null
+                timingNavigator = emptyTimingNavigator()
             }
+
             field = value
         }
 
@@ -111,50 +147,76 @@ open class LyricPlayerView(
                 reset(); isTextMode = true
             }
             if (value.isNullOrBlank()) {
-                removeAllViews(); return
+                removeAllViews()
+                return
             }
 
-            if (!contains(textRecycleView)) {
-                addView(textRecycleView, defaultLp)
-                updateTextLineViewStyle(style)
+            if (!contains(textRecycleLineView)) {
+                addView(textRecycleLineView, defaultLayoutParams)
+                updateTextLineViewStyle(styleConfig)
             }
-            val old = textRecycleView.line
-            val speed = AnimSpeed.fromPref(style.animation.speed)
-            val preset = YoYoPresets.getById(style.animation.presetId, speed)
+            val old = textRecycleLineView.line
 
-            val line = RichLyricLine(
-                text = value.lines().first(),
-                translation = value.lines().getOrNull(1),
-            )
+            val preset = YoYoPresets.getById(styleConfig.animId)
 
-            if (style.animation.enabled && preset != null) {
+            fun buildLine(text: String): RichLyricLine {
+                val lines = text.lines()
+                val main = lines.first()
+                val sub = lines.getOrNull(1)
+
+                val line = RichLyricLine(
+                    text = main,
+                    translation = sub,
+                )
+                return line
+            }
+
+            val line = buildLine(value)
+
+            if (styleConfig.enableAnim && preset != null) {
                 animateUpdate(preset) {
-                    textRecycleView.line = line
-                    textRecycleView.requestStartMarquee()
+                    textRecycleLineView.line = line
+                    textRecycleLineView.requestStartMarquee()
                 }
             } else {
-                textRecycleView.line = line
-                textRecycleView.requestStartMarquee()
+                textRecycleLineView.line = line
+                textRecycleLineView.requestStartMarquee()
             }
 
-            lyricCountChangeListeners.forEach { it.onLyricTextChanged(old?.text ?: "", value) }
+            lyricCountChangeListeners.forEach {
+                it.onLyricTextChanged(old?.text ?: "", value)
+            }
         }
 
-    fun setStyle(style: LyricViewStyle) {
-        this.style = style
-        interludeTracker = InterludeTracker(MIN_GAP_DURATION)
-        updateTextLineViewStyle(style)
-        forEach { if (it is RichLyricLineView) it.setStyle(style) }
+    // ---------- 私有方法 ----------
+
+    /**
+     * 由 [autoAddView] 方法在合适时设置布局过渡器
+     */
+    private fun updateLayoutTransitionHandler(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
+        layoutTransitionHandler = LayoutTransitionX(config).apply {
+            setAnimateParentHierarchy(true)
+        }
+        layoutTransition = null
+    }
+
+    fun setStyle(config: RichLyricLineConfig) = apply {
+        this.styleConfig = config
+        updateTextLineViewStyle(config)
+        forEach { if (it is RichLyricLineView) it.setStyle(config) }
         updateViewsVisibility()
     }
 
-    fun getStyle() = style
+    fun getStyle() = styleConfig
 
     fun setTransitionConfig(config: String?) {
         if (_transitionConfig == config) return
         _transitionConfig = config
         updateLayoutTransitionHandler(config)
+
         forEach { if (it is RichLyricLineView) it.setTransitionConfig(config) }
+
+        Log.d("LyricPlayerView", "setTransitionConfig: $config")
     }
 
     private var _transitionConfig: String? = null
@@ -163,6 +225,8 @@ open class LyricPlayerView(
         displayTranslation: Boolean = isDisplayTranslation,
         displayRoma: Boolean = isDisplayRoma
     ) {
+        Log.d(TAG, "updateDisplayTranslation: $displayTranslation, $displayRoma")
+
         isDisplayTranslation = displayTranslation
         isDisplayRoma = displayRoma
         forEach {
@@ -180,131 +244,261 @@ open class LyricPlayerView(
     fun setPosition(position: Long) = updatePosition(position)
 
     fun reset() {
+        Log.d(TAG, "reset")
         removeAllViews()
-        activeLines.clear()
-        currentInterlude = null
-        if (isInInterlude) exitInterludeMode()
-        isInInterlude = false
+        activeLyricLines.clear()
+        if (isEnteringInterludeMode) exitInterludeMode()
     }
 
     override fun removeAllViews() {
-        layoutTransition = null
+        Log.d(TAG, "removeAllViews")
+        layoutTransition = null // 移除时禁用动画防止闪烁
         super.removeAllViews()
     }
 
     override fun updateColor(primary: IntArray, background: IntArray, highlight: IntArray) {
-        style = style.copy(
-            primary = style.primary.copy(color = primary),
-            secondary = style.secondary.copy(color = primary),
-            highlight = Highlight(background, highlight)
-        )
-        forEach { if (it is UpdatableColor) it.updateColor(primary, background, highlight) }
+        styleConfig.apply {
+            this.primary.textColor = primary
+            secondary.textColor = primary
+            syllable.highlightColor = highlight
+            syllable.backgroundColor = background
+        }
+
+        forEach {
+            if (it is UpdatableColor) {
+                it.updateColor(
+                    primary,
+                    background,
+                    highlight
+                )
+            }
+        }
     }
 
-    fun updateViewsVisibility() {
-        applyVisibility()
-    }
+    // --- 核心更新逻辑 ---
 
-    // --- internal ---
-
+    /**
+     * 更新播放时间位置，并同步各行视图进度。主入口。
+     */
     private fun updatePosition(position: Long, seekTo: Boolean = false) {
         if (isTextMode) return
 
-        tempMatches.clear()
-        timingNavigator.forEachAtOrPrevious(position) { tempMatches.add(it) }
-        val matches = tempMatches
+        tempFoundActiveLines.clear()
+        timingNavigator.forEachAtOrPrevious(position) { tempFoundActiveLines.add(it) }
 
-        syncViews(matches)
+        val matches = tempFoundActiveLines
+        updateActiveViews(matches)
 
+        // 同步所有子视图的进度或 seek 操作
         forEach { view ->
             if (view is RichLyricLineView) {
                 if (seekTo) view.seekTo(position) else view.setPosition(position)
             }
         }
-        checkInterlude(position, matches)
+        handleInterlude(position, matches)
     }
 
-    private val slotEngine: ViewSlotEngine by lazy {
-        ViewSlotEngine(this)
-    }
+    /**
+     * 根据匹配结果调整要添加与移除的行视图：复用单行，批量添加/移除。
+     */
+    private fun updateActiveViews(matches: List<IRichLyricLine>) {
+        viewsToRemoveTemp.clear()
+        viewsToAddTemp.clear()
 
-    private fun syncViews(matches: List<TimedLine>) {
-        val engine = slotEngine
-        val matchLines: List<IRichLyricLine> = matches.map { it.line }
-        engine.sync(matchLines, activeLines)
+        // 识别需移除项
+        for (i in 0 until childCount) {
+            val view = getChildAtOrNull(i) as? RichLyricLineView ?: continue
+            if (view.line !in matches) viewsToRemoveTemp.add(view)
+        }
 
-        if (engine.toRemove.isEmpty() && engine.toAdd.isEmpty()) return
+        // 识别需添加项
+        matches.forEach { if (it !in activeLyricLines) viewsToAddTemp.add(it) }
 
-        if (activeLines.size == 1 && engine.toRemove.size == 1 && engine.toAdd.size == 1) {
-            val recycle = getChildAtOrNull(0) as? RichLyricLineView
-            val newLine = engine.toAdd[0]
-            if (recycle != null) {
-                val speed = AnimSpeed.fromPref(style.animation.speed)
-                val preset by lazy { YoYoPresets.getById(style.animation.presetId, speed) }
-                if (style.animation.enabled && preset != null) {
-                    activeLines[0] = newLine
-                    recycle.beginAnimationTransition()
-                    recycle.line = newLine
+        if (viewsToRemoveTemp.isEmpty() && viewsToAddTemp.isEmpty()) return
+
+        // 单行变化直接复用 View
+        if (activeLyricLines.size == 1 && viewsToRemoveTemp.size == 1 && viewsToAddTemp.size == 1) {
+            val recycleView = getChildAtOrNull(0) as? RichLyricLineView
+            val newLine = viewsToAddTemp[0]
+
+            if (recycleView != null) {
+
+                val preset by lazy { YoYoPresets.getById(styleConfig.animId) }
+                if (styleConfig.enableAnim && preset != null) {
+                    activeLyricLines[0] = newLine
+                    recycleView.beginAnimationTransition()
+                    recycleView.line = newLine
+
                     animateUpdate(preset!!) {
-                        recycle.endAnimationTransition()
-                        recycle.requestStartMarquee()
+                        recycleView.endAnimationTransition()
+                        recycleView.requestStartMarquee()
+
                         updateViewsVisibility()
                     }
                 } else {
-                    activeLines[0] = newLine
-                    recycle.line = newLine
-                    recycle.requestStartMarquee()
+                    activeLyricLines[0] = newLine
+                    recycleView.line = newLine
+
+                    recycleView.requestStartMarquee()
                 }
             }
         } else {
-            engine.toRemove.forEach {
-                removeView(it); activeLines.remove(it.line)
-            }
-            engine.toAdd.forEach { line ->
-                activeLines.add(line)
-                val view = createDoubleLineView(line)
-                autoAddView(view)
-                view.requestStartMarquee()
+            viewsToRemoveTemp.forEach { removeView(it); activeLyricLines.remove(it.line) }
+            viewsToAddTemp.forEach { line ->
+                activeLyricLines.add(line)
+                createDoubleLineView(line).also {
+                    autoAddView(it)
+                    it.requestStartMarquee()
+                }
             }
         }
 
         updateViewsVisibility()
 
         lyricCountChangeListeners.forEach {
-            it.onLyricChanged(engine.toAdd, engine.toRemove.mapNotNull { it.line })
+            it.onLyricChanged(
+                viewsToAddTemp,
+                viewsToRemoveTemp.mapNotNull(RichLyricLineView::line)
+            )
+        }
+
+        printViewsState()
+    }
+
+    private fun printViewsState() {
+        forEachIndexed { index, view ->
+            if (view is RichLyricLineView) {
+                val main = view.main
+                val secondary = view.secondary
+                Log.d("LyricPlayerView", "#$index: main=$main")
+                Log.d("LyricPlayerView", "#$index: secondary=$secondary")
+            }
         }
     }
 
-    private fun applyVisibility() {
-        val children =
-            (0 until childCount).mapNotNull { i -> getChildAtOrNull(i) as? RichLyricLineView }
-        if (children.isEmpty()) return
+    fun updateViewsVisibility() {
+        doUpdateViewsVisibility()
+    }
 
-        ViewVisibilityPolicy.apply(ViewVisibilityPolicy.Input(children, style))
+    /**
+     * 根据当前可见行与播放状态判断最终每个 RichLyricLineView 的可见性与缩放。
+     * 逻辑分四个阶段：状态决策、样式初始配置、硬性保留规则(最多2个槽位)、布局动画缩放。
+     */
+    private fun doUpdateViewsVisibility() {
+        val totalChildCount = childCount
+        if (totalChildCount == 0) return
+
+        val v0 = getChildAtOrNull(0) as? RichLyricLineView ?: return
+        val v1 = getChildAtOrNull(1) as? RichLyricLineView
+
+        // --- Phase 1: 状态决策 ---
+        val v0MainFinished = v0.main.isPlayFinished()
+        val v0HasSecContent = v0.secondary.lyric.let {
+            it.text.isNotBlank() || it.words.isNotEmpty()
+        }
+
+        // 是否进入“换行过渡模式”：v0 主句已结束且存在 v1
+        val isTransitionMode = v0MainFinished && v1 != null
+
+        // --- Phase 2: 样式与初步可见性配置 ---
+        val pSize = styleConfig.primary.textSize
+        val sSize = styleConfig.secondary.textSize
+
+        // 配置 v0
+        if (isTransitionMode) {
+            // 过渡：v0 主歌词变小，副歌词隐藏
+            v0.main.visibilityIfChanged = VISIBLE
+            v0.main.setTextSize(sSize)
+            v0.secondary.visibilityIfChanged = GONE
+        } else {
+            // 聚焦当前：v0 主歌词正常显示，副歌词按条件显示
+            v0.main.visibilityIfChanged = VISIBLE
+            v0.main.setTextSize(pSize)
+
+            v0.secondary.visibilityIfChanged =
+                if (v0.alwaysShowSecondary
+                    || (v0HasSecContent && v0.secondary.isPlayStarted())
+                ) VISIBLE else GONE
+
+            v0.secondary.setTextSize(sSize)
+        }
+
+        // 配置 v1
+        if (v1 != null) {
+            if (isTransitionMode) {
+                // 过渡：v1 主歌词作为新焦点，显示为大字
+                v1.main.visibilityIfChanged = VISIBLE
+                v1.main.setTextSize(pSize)
+                v1.secondary.visibilityIfChanged = GONE
+            } else {
+                // 预读：v1 主歌词小字
+                v1.main.visibilityIfChanged = VISIBLE
+                v1.main.setTextSize(sSize)
+                v1.secondary.visibilityIfChanged = GONE
+            }
+        }
+
+        // --- Phase 3: 最终裁决（最多显示 2 个槽位） ---
+        var slotsRemaining = 2
+
+        forEach { view ->
+            if (view is RichLyricLineView) {
+                var mainVis = view.main.visibility
+                var secVis = view.secondary.visibility
+
+                // 检查 Main
+                if (view.main.isVisible) {
+                    if (slotsRemaining > 0) {
+                        slotsRemaining--
+                    } else {
+                        mainVis = GONE
+                    }
+                }
+                // 检查 Secondary
+                if (view.secondary.isVisible) {
+                    if (slotsRemaining > 0) {
+                        slotsRemaining--
+                    } else {
+                        secVis = GONE
+                    }
+                }
+
+                // 容器整体可见性判定
+                val allGone = mainVis != VISIBLE && secVis != VISIBLE
+                if (!allGone) {
+                    view.main.visibilityIfChanged = mainVis
+                    view.secondary.visibilityIfChanged = secVis
+                }
+                view.visibilityIfChanged = if (allGone) GONE else VISIBLE
+            }
+        }
+
+        // --- Phase 4: 布局动画与缩放（基于最终可见性） ---
+        val finalVisibleLines = (2 - slotsRemaining) // 实际占用的槽位
+        val targetScale = if (finalVisibleLines > 1) {
+            styleConfig.scaleInMultiLine.coerceIn(0.1f, 2f)
+        } else 1.0f
+
+        val isMultiViewMode =
+            totalChildCount > 1 && v1?.visibility == VISIBLE && targetScale != 1.0f
+
+        for (i in 0 until totalChildCount) {
+            val view = getChildAtOrNull(i) as? RichLyricLineView ?: continue
+
+            // 应用缩放
+            view.setRenderScale(targetScale)
+
+            // 吸附位移：上下吸附以保持视觉中心
+            if (isMultiViewMode && view.isVisible && view.measuredHeight > 0) {
+                val offset = (view.measuredHeight * (1f - targetScale)) / 2f
+                view.translationY = if (i == 0) offset else -offset
+            } else {
+                view.translationY = 0f
+
+            }
+        }
+
         invalidate()
-    }
-
-    private fun checkInterlude(position: Long, matches: List<TimedLine>) {
-        val resolved = interludeTracker.evaluate(position, matches, currentInterlude)
-        if (resolved == currentInterlude) return
-
-        if (currentInterlude != null && resolved == null) {
-            currentInterlude = null
-            isInInterlude = false
-            exitInterludeMode()
-        } else if (resolved != null) {
-            currentInterlude = resolved
-            isInInterlude = true
-            enteringInterludeMode(resolved.duration)
-        }
-    }
-
-    @CallSuper
-    protected open fun enteringInterludeMode(duration: Long) {
-    }
-
-    @CallSuper
-    protected open fun exitInterludeMode() {
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -312,62 +506,148 @@ open class LyricPlayerView(
         updateViewsVisibility()
     }
 
-    override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
-        viewTreeObserver.removeOnGlobalLayoutListener(globalLayoutListener)
-        reset()
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
-    }
-
-    // --- helpers ---
-
+    /**
+     * 创建一个双行歌词视图并完成必要的监听与样式设置。
+     */
     private fun createDoubleLineView(line: IRichLyricLine) = RichLyricLineView(
         context,
         displayTranslation = isDisplayTranslation,
         displayRoma = isDisplayRoma,
-        enableRelativeProgress = style.primary.relativeProgress,
-        enableRelativeProgressHighlight = style.primary.relativeHighlight,
+        enableRelativeProgress = isEnableRelativeProgress,
+        enableRelativeProgressHighlight = isEnableRelativeProgressHighlight,
     ).apply {
         this.line = line
-        setStyle(style)
+        setStyle(styleConfig)
         setMainLyricPlayListener(mainPlayListener)
         setSecondaryLyricPlayListener(secondaryPlayListener)
         setTransitionConfig(_transitionConfig)
     }
 
+    /**
+     * 将新创建的视图添加到容器中，必要时启用布局过渡动画。
+     */
     private fun autoAddView(view: RichLyricLineView) {
         if (layoutTransition == null && isNotEmpty()) layoutTransition = layoutTransitionHandler
-        addView(view, defaultLp)
+        addView(view, defaultLayoutParams)
     }
 
-    private fun updateTextLineViewStyle(style: LyricViewStyle) {
-        textRecycleView.setStyle(style)
+    private fun updateTextLineViewStyle(config: RichLyricLineConfig) {
+        textRecycleLineView.setStyle(
+            config
+        )
     }
 
-    private fun updateLayoutTransitionHandler(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
-        layoutTransitionHandler =
-            LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
-        layoutTransition = null
+    // --- 间奏处理逻辑 ---
+
+    private fun handleInterlude(position: Long, matches: List<RichLyricLineModel>) {
+        val resolved = resolveInterludeState(position, matches)
+        if (currentInterludeState == resolved) return
+
+        if (currentInterludeState != null && resolved == null) {
+            currentInterludeState = null
+            exitInterludeMode()
+        } else if (resolved != null) {
+            currentInterludeState = resolved
+            enteringInterludeMode(resolved.end - resolved.start)
+        }
     }
 
-    private fun resolveTitle(song: Song): String? = when (style.placeholder) {
-        TitleSlot.NONE -> null
-        TitleSlot.NAME_ARTIST -> {
-            val n = song.name
-            val a = song.artist
-            when {
-                !n.isNullOrBlank() && !a.isNullOrBlank() -> "$n - $a"; !n.isNullOrBlank() -> n; else -> null
+    private fun resolveInterludeState(
+        pos: Long,
+        matches: List<RichLyricLineModel>
+    ): InterludeState? {
+        currentInterludeState?.let { if (pos in (it.start + 1) until it.end) return it }
+
+        if (matches.isEmpty()) return null
+        val current = matches.last()
+        val next = current.next ?: return null
+
+        if (next.begin - current.end <= MIN_GAP_DURATION) return null
+        if (pos <= current.end || pos >= next.begin) return null
+
+        return InterludeState(current.end, next.begin)
+    }
+
+    @CallSuper
+    protected open fun enteringInterludeMode(duration: Long) {
+        isEnteringInterludeMode = true
+    }
+
+    @CallSuper
+    protected open fun exitInterludeMode() {
+        isEnteringInterludeMode = false
+    }
+
+    // --- 数据填充辅助 ---
+
+    @Suppress("UnnecessaryVariable")
+    fun fillGapAtStart(origin: Song): Song {
+        val song = origin
+        val title = getSongTitle(song)
+        if (title.isNullOrBlank()) {
+            return origin
+        }
+        val lyrics = song.lyrics?.toMutableList() ?: mutableListOf()
+
+        if (lyrics.isEmpty()) {
+            val d = if (song.duration > 0) song.duration else Long.MAX_VALUE
+            lyrics.add(createLyricTitleLine(d, d, title))
+        } else {
+            val first = lyrics.first()
+            if (first.begin > 0) {
+                var end = first.begin
+
+                //优化同时匹配标题行和第一行歌词抖动
+                if (end > 1) end--
+
+                lyrics.add(
+                    0,
+                    createLyricTitleLine(end, end, title)
+                )
             }
         }
-
-        TitleSlot.NAME -> song.name?.takeIf { it.isNotBlank() }
+        song.lyrics = lyrics
+        return song
     }
 
-    private fun emptyNavigator() = TimingNavigator<TimedLine>(emptyArray())
+    private fun createLyricTitleLine(end: Long, duration: Long, text: String) =
+        RichLyricLine(end = end, duration = duration, text = text).apply {
+            metadata = lyricMetadataOf(KEY_SONG_TITLE_LINE to "true")
+        }
+
+    private fun getSongTitle(song: Song): String? {
+        val name = song.name
+        val artist = song.artist
+
+        return when (styleConfig.placeholderFormat) {
+            PlaceholderFormat.NONE -> null
+            PlaceholderFormat.NAME_ARTIST -> when {
+                !name.isNullOrBlank() && !artist.isNullOrBlank() -> "$name - $artist"
+                !name.isNullOrBlank() -> name
+                else -> null
+            }
+
+            PlaceholderFormat.NAME -> name?.takeIf { it.isNotBlank() }
+            else -> name?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun emptyTimingNavigator() = TimingNavigator<RichLyricLineModel>(emptyArray())
+
+    private data class InterludeState(val start: Long, val end: Long)
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        Log.d(TAG, "onDetachedFromWindow")
+        viewTreeObserver.removeOnGlobalLayoutListener(viewTreeObserverListener)
+        reset()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        Log.d(TAG, "onAttachedToWindow")
+        viewTreeObserver.addOnGlobalLayoutListener(viewTreeObserverListener)
+    }
 
     interface LyricCountChangeListener {
         fun onLyricTextChanged(old: String, new: String)

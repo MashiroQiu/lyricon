@@ -1,9 +1,3 @@
-/*
- * Copyright 2026 Proify, Tomakino
- * Licensed under the Apache License, Version 2.0
- * http://www.apache.org/licenses/LICENSE-2.0
- */
-
 package io.github.proify.lyricon.lyric.view.yoyo
 
 import android.animation.Animator
@@ -78,7 +72,7 @@ object YoYoAnimation {
  * @param preset 使用 [YoYoPresets] 中的预设组合
  */
 fun <T : View> T.animateUpdate(
-    preset: Pair<AnimConfig, AnimConfig>,
+    preset: Pair<AnimConfig, AnimConfig> = YoYoPresets.FadeOut_FadeIn,
     block: T.() -> Unit
 ) {
     YoYoAnimation.switchContent(this, preset.first, preset.second) {

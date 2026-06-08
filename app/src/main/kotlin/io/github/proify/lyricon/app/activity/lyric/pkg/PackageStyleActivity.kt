@@ -55,6 +55,7 @@ import io.github.proify.lyricon.app.compose.custom.miuix.basic.MiuixScrollBehavi
 import io.github.proify.lyricon.app.compose.custom.miuix.basic.ScrollBehavior
 import io.github.proify.lyricon.app.util.LyricPrefs
 import io.github.proify.lyricon.app.util.editCommit
+import io.github.proify.lyricon.app.util.updateRemoteLyricStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,7 +117,7 @@ class PackageStyleViewModel(
 
     fun getPackageLabel(packageName: String): String =
         if (packageName == DEFAULT_PACKAGE_NAME) {
-            context.getString(R.string.app_style_default)
+            context.getString(R.string.package_config_default)
         } else {
             runCatching {
                 AppCache.getCachedLabel(packageName)?.let { return@runCatching it }
@@ -124,7 +125,7 @@ class PackageStyleViewModel(
                 val label = context.packageManager.getApplicationLabel(app).toString()
                 AppCache.cacheLabel(packageName, label)
                 label
-            }.getOrElse { context.getString(R.string.app_style_default) }
+            }.getOrElse { context.getString(R.string.package_config_default) }
         }
 
     private fun updateSharedPreferences(packageName: String) {
@@ -174,7 +175,7 @@ class PackageStyleActivity : AbstractLyricActivity() {
         PackageStyleViewModelFactory(
             context = this,
             onLyricStyleUpdate = {
-                //远程自动监听preferences更新，这里不需要实现
+                updateRemoteLyricStyle()
             },
         )
     }

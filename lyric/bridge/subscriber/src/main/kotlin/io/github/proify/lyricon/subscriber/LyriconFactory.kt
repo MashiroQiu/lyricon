@@ -13,16 +13,12 @@ import android.app.Application
 import android.content.Context
 import android.os.Build
 
-/** 创建 [LyriconSubscriber] 的工厂。 */
 object LyriconFactory {
 
     /**
-     * 创建订阅端实例。
+     * 创建 LyriconSubscriber 实例。
      *
-     * Android 8.1 以下系统不支持当前 Binder/SharedMemory 通道，会返回空实现。
-     *
-     * @param context 用于注册中心服务广播接收器和读取进程信息的上下文。
-     * @return 可用于注册中心服务的订阅端实例。
+     * @param context 上下文
      */
     fun createSubscriber(
         context: Context

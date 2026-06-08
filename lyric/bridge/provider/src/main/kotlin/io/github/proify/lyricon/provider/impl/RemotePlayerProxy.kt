@@ -13,102 +13,131 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.IRemotePlayer
+import io.github.proify.lyricon.provider.ProviderConstants
 import io.github.proify.lyricon.provider.RemotePlayer
 import io.github.proify.lyricon.provider.deflate
 import io.github.proify.lyricon.provider.json
+import io.github.proify.lyricon.provider.service.RemoteServiceBinder
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.encodeToStream
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * [RemotePlayer] 的 Binder 代理实现。
- *
- * 普通播放器命令通过 [IRemotePlayer] 发送，播放进度写入共享内存，减少高频 Binder 调用。
- */
 @RequiresApi(Build.VERSION_CODES.O_MR1)
-internal class RemotePlayerProxy : RemotePlayer {
-    /** 当前连接状态是否允许发送播放器命令。 */
+internal class RemotePlayerProxy : RemotePlayer, RemoteServiceBinder<IRemotePlayer?> {
+
     @Volatile
     var allowSending: Boolean = false
 
-    private var remotePlayer: IRemotePlayer? = null
-    private var positionMemory: SharedMemory? = null
-    private var positionBuffer: ByteBuffer? = null
+    @Volatile
+    private var iRemotePlayer: IRemotePlayer? = null
 
-    override val isActive: Boolean
-        get() = remotePlayer?.asBinder()?.isBinderAlive == true
+    @Volatile
+    private var positionSharedMemory: SharedMemory? = null
 
-    /** 绑定或清空远端播放器 Binder。 */
-    fun bindRemoteService(player: IRemotePlayer?) {
-        closePositionMemory()
-        remotePlayer = player
-        positionMemory = runCatching { player?.positionMemory }
-            .onFailure { Log.e(TAG, "Failed to get position memory", it) }
-            .getOrNull()
-        positionBuffer = runCatching { positionMemory?.mapReadWrite() }
-            .onFailure { Log.e(TAG, "Failed to map position memory", it) }
-            .getOrNull()
+    @Volatile
+    private var positionByteBuffer: ByteBuffer? = null
+
+    private val positionActive = AtomicBoolean(false)
+
+    override fun bindRemoteService(service: IRemotePlayer?) {
+        if (ProviderConstants.DEBUG) Log.d(TAG, "Binding remote service: ${service != null}")
+
+        clearBinding()
+        iRemotePlayer = service
+
+        runCatching {
+            service?.positionMemory?.also { memory ->
+                positionSharedMemory = memory
+                positionByteBuffer = memory.mapReadWrite()
+                positionActive.set(true)
+            }
+        }.onFailure { e ->
+            Log.e(TAG, "Failed to map shared memory for position sync", e)
+        }
     }
 
-    override fun setSong(song: Song?): Boolean = send {
-        setSong(song?.let { json.encodeToString(it).toByteArray().deflate() })
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun setSong(song: Song?): Boolean = executeRemoteCall { service ->
+        val bytes = song?.let {
+            val outputStream = ByteArrayOutputStream()
+            json.encodeToStream(it, outputStream)
+            outputStream.use {
+                outputStream.toByteArray().deflate()
+            }
+        }
+        service.setSong(bytes)
     }
 
-    override fun setPlaybackState(playing: Boolean): Boolean = send {
-        setPlaybackState(playing)
-    }
+    override fun setPlaybackState(playing: Boolean): Boolean =
+        executeRemoteCall { it.setPlaybackState(playing) }
 
-    override fun seekTo(position: Long): Boolean = send {
-        seekTo(position.coerceAtLeast(0L))
-    }
+    override fun seekTo(position: Long): Boolean =
+        executeRemoteCall { it.seekTo(position.coerceAtLeast(0)) }
 
     override fun setPosition(position: Long): Boolean {
-        if (!allowSending) return false
-
+        if (!positionActive.get()) return false
         return try {
-            positionBuffer?.putLong(0, position.coerceAtLeast(0L))
+            positionByteBuffer?.putLong(0, position.coerceAtLeast(0))
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to write position", e)
+            Log.e(TAG, "Failed to set position", e)
             false
         }
     }
 
-    override fun setPositionUpdateInterval(interval: Int): Boolean = send {
-        setPositionUpdateInterval(interval.coerceAtLeast(0))
+    override fun setPositionUpdateInterval(interval: Int): Boolean =
+        executeRemoteCall { it.setPositionUpdateInterval(interval) }
+
+    override fun sendText(text: String?): Boolean =
+        executeRemoteCall { it.sendText(text) }
+
+    override fun setDisplayTranslation(displayTranslation: Boolean): Boolean =
+        executeRemoteCall { it.setDisplayTranslation(displayTranslation) }
+
+    override fun setDisplayRoma(displayRoma: Boolean): Boolean =
+        executeRemoteCall { it.setDisplayRoma(displayRoma) }
+
+    override fun setPlaybackState(state: PlaybackState?): Boolean =
+        executeRemoteCall {
+            it.setPlaybackState2(state)
+        }
+
+    override val isActive: Boolean
+        get() = iRemotePlayer?.asBinder()?.isBinderAlive == true
+
+    private fun clearBinding() {
+        positionActive.set(false)
+
+        positionByteBuffer?.let {
+            runCatching { SharedMemory.unmap(it) }.getOrElse { it ->
+                Log.e(TAG, "Failed to unmap shared memory", it)
+            }
+            positionByteBuffer = null
+        }
+
+        positionSharedMemory?.let {
+            runCatching { it.close() }.getOrElse { it ->
+                Log.e(TAG, "Failed to close shared memory", it)
+            }
+            positionSharedMemory = null
+        }
+
+        iRemotePlayer = null
     }
 
-    override fun sendText(text: String?): Boolean = send {
-        sendText(text)
-    }
+    private inline fun executeRemoteCall(block: (IRemotePlayer) -> Any?): Boolean {
+        if (!allowSending) return false
 
-    override fun setDisplayTranslation(isDisplayTranslation: Boolean): Boolean = send {
-        setDisplayTranslation(isDisplayTranslation)
-    }
-
-    override fun setDisplayRoma(isDisplayRoma: Boolean): Boolean = send {
-        setDisplayRoma(isDisplayRoma)
-    }
-
-    override fun setPlaybackState(state: PlaybackState?): Boolean = send {
-        setPlaybackState2(state)
-    }
-
-    private inline fun send(block: IRemotePlayer.() -> Unit): Boolean {
-        val player = remotePlayer
-        if (!allowSending || player == null) return false
-
+        val service = iRemotePlayer ?: return false
         return try {
-            block(player)
-            true
-        } catch (it: Exception) {
-            Log.e(TAG, "Failed to send player command", it)
+            val result = block(service)
+            (result as? Boolean) ?: true
+        } catch (e: Exception) {
+            Log.e(TAG, "Remote call failed: ${e.message}", e)
             false
         }
-    }
-
-    private fun closePositionMemory() {
-        positionBuffer = null
-        positionMemory?.close()
-        positionMemory = null
     }
 
     private companion object {

@@ -38,7 +38,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 private val ITEM_SPACING = 16.dp
@@ -109,7 +108,6 @@ private fun TextColorBottomSheet(
         show = isVisible.value,
         modifier = Modifier,
         title = title,
-        backgroundColor = MiuixTheme.colorScheme.surface,
         endAction = {
             if (textColor.hasCustomColors()) {
                 Row {

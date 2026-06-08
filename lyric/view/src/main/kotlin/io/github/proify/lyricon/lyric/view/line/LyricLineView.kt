@@ -4,6 +4,8 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
+@file:Suppress("MemberVisibilityCanBePrivate", "unused")
+
 package io.github.proify.lyricon.lyric.view.line
 
 import android.content.Context
@@ -13,283 +15,87 @@ import android.graphics.LinearGradient
 import android.graphics.Shader
 import android.text.TextPaint
 import android.util.AttributeSet
+import android.util.Log
 import android.view.Choreographer
 import android.view.View
 import androidx.core.view.doOnAttach
+import androidx.core.view.isVisible
 import io.github.proify.lyricon.lyric.model.LyricLine
-import io.github.proify.lyricon.lyric.view.Highlight
-import io.github.proify.lyricon.lyric.view.LyricPlayListener
-import io.github.proify.lyricon.lyric.view.Marquee
-import io.github.proify.lyricon.lyric.view.TextLook
+import io.github.proify.lyricon.lyric.view.LyricLineConfig
 import io.github.proify.lyricon.lyric.view.UpdatableColor
-import io.github.proify.lyricon.lyric.view.WordMotion
 import io.github.proify.lyricon.lyric.view.dp
 import io.github.proify.lyricon.lyric.view.line.model.LyricModel
 import io.github.proify.lyricon.lyric.view.line.model.createModel
 import io.github.proify.lyricon.lyric.view.line.model.emptyLyricModel
 import io.github.proify.lyricon.lyric.view.sp
-import kotlin.math.ceil
+import java.lang.ref.WeakReference
 
 open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), UpdatableColor {
+
+    companion object {
+        private const val TAG = "LyricLineView"
+        private const val DEBUG = false
+    }
 
     init {
         isHorizontalFadingEdgeEnabled = true
         setFadingEdgeLength(10.dp)
     }
 
-    val textPaint: TextPaint = TextPaintX().apply { textSize = 24f.sp }
+    val textPaint: TextPaint = TextPaintX().apply {
+        textSize = 24f.sp
+    }
 
-    val model: LyricModel get() = _model
-    private var _model: LyricModel = emptyLyricModel()
+    var lyric: LyricModel = emptyLyricModel()
+        private set
 
-    val lineWidth: Float get() = _model.width
+    var scrollXOffset: Float = 0f
 
-    val isPlainText: Boolean get() = _model.isPlainText
-    val isWordSync: Boolean get() = !isPlainText
-    val isOverflow: Boolean get() = lineWidth > measuredWidth
-    val isPlaying: Boolean get() = activeRenderer.isPlaying
-    val isFinished: Boolean get() = activeRenderer.isFinished
-    val isStarted: Boolean get() = activeRenderer.isStarted
+    var isScrollFinished: Boolean = false
+    val marquee: Marquee = Marquee(WeakReference(this))
+    val syllable: Syllable = Syllable(this)
+    private val animationDriver = AnimationDriver()
 
-    var isScrollOnly: Boolean = false
-        set(value) {
-            field = value
-            syncRenderer.isScrollOnly = value
-        }
+    val lyricWidth: Float get() = lyric.width
 
-    var playListener: LyricPlayListener? = null
-        set(value) {
-            field = value
-            syncRenderer.playListener = value
-        }
-
-    var isWordCharMotionEnabled: Boolean
-        get() = syncRenderer.isCharMotionEnabled
-        set(value) {
-            if (syncRenderer.isCharMotionEnabled == value) return
-            syncRenderer.isCharMotionEnabled = value
-            requestLayout()
-            invalidate()
-        }
-
-    var wordMotion: WordMotion = WordMotion()
-        set(value) {
-            if (field == value) return
-            field = value
-            syncRenderer.isCharMotionEnabled = value.enabled
-            syncRenderer.cjkMotionLiftFactor = value.cjkLiftFactor
-            syncRenderer.cjkMotionWaveFactor = value.cjkWaveFactor
-            syncRenderer.latinMotionLiftFactor = value.latinLiftFactor
-            syncRenderer.latinMotionWaveFactor = value.latinWaveFactor
-            requestLayout()
-            invalidate()
-        }
-
-    private val lineState = LineState()
-    private val scrollRenderer = ScrollTextRenderer()
-    private val syncRenderer = WordSyncRenderer(this)
-    private val animator = Animator()
-
-    private var activeRenderer: LineRenderer = scrollRenderer
-
-    private var primaryColors = intArrayOf()
-    private var backgroundColors = intArrayOf()
-    private var highlightColors = intArrayOf()
-
-    private var ghostSpacing: Float = 40f.dp
-    private var scrollStarted = false
-    private var scrollUnlocked = false
+    fun reset() {
+        animationDriver.stop()
+        marquee.reset()
+        syllable.reset()
+        scrollXOffset = 0f
+        isScrollFinished = false
+        lyric = emptyLyricModel()
+        refreshModelSizes()
+        invalidate()
+    }
 
     val textSize: Float get() = textPaint.textSize
 
     fun setTextSize(size: Float) {
-        val needsUpdate = textPaint.textSize != size || syncRenderer.bgPaint.textSize != size
-        if (!needsUpdate) return
+        val needUpdate = textPaint.textSize != size
+                || syllable.textSize != size
+
+        if (!needUpdate) return
+
         textPaint.textSize = size
-        syncRenderer.setTextSize(size)
-        refreshSizes()
-        syncRenderer.updateLayout(_model, lineState, measuredWidth, measuredHeight)
-        invalidate()
-    }
+        syllable.setTextSize(size)
 
-    fun setLyric(rawLine: LyricLine?) {
-        val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
-
-        reset()
-        scrollUnlocked = false
-        scrollStarted = false
-
-        _model = line?.normalize()?.createModel() ?: emptyLyricModel()
-        activeRenderer = if (_model.isPlainText) scrollRenderer else syncRenderer
-        refreshSizes()
-        updateColorsIfReady()
-        invalidate()
-    }
-
-    fun configureWith(
-        text: TextLook, highlight: Highlight, marquee: Marquee,
-        gradient: Boolean, fadingEdge: Int
-    ) {
-        updateColor(text.color, highlight.background, highlight.foreground)
-        setTextSize(text.size)
-        textPaint.typeface = text.typeface
-        syncRenderer.setTypeface(text.typeface)
-        syncRenderer.isGradientEnabled = gradient
-
-        scrollRenderer.apply {
-            scrollSpeed = marquee.speed
-            ghostSpacing = marquee.spacing
-            initialDelayMs = marquee.initialDelay
-            loopDelayMs = marquee.loopDelay
-            repeatCount = marquee.repeatCount
-            stopAtEnd = marquee.stopAtEnd
-        }
-        ghostSpacing = marquee.spacing
-
-        if (fadingEdge <= 0) {
-            setFadingEdgeLength(0)
-            isHorizontalFadingEdgeEnabled = false
-        } else {
-            setFadingEdgeLength(fadingEdge)
-            isHorizontalFadingEdgeEnabled = true
-        }
-
-        refreshSizes()
-        animator.stop()
-        animator.startIfNeeded()
-        invalidate()
-    }
-
-    fun requestScroll() {
-        doOnAttach {
-            scrollUnlocked = true
-            if (isPlainText) startScrolling()
-        }
-    }
-
-    fun seekTo(posMs: Long) {
-        if (isPlainText) {
-            startScrolling()
-        } else {
-            activeRenderer.seek(_model, lineState, posMs, measuredWidth, measuredHeight)
-            animator.startIfNeeded()
-        }
-    }
-
-    fun updatePosition(posMs: Long) {
-        if (isWordSync) {
-            if (syncRenderer.isScrollOnly && !isOverflow) return
-            activeRenderer.update(_model, lineState, posMs, measuredWidth, measuredHeight)
-            if (syncRenderer.isPlaying && !syncRenderer.isFinished) {
-                animator.startIfNeeded()
-            }
-        } else {
-            startScrolling()
-        }
-    }
-
-    fun refreshSizes() {
-        _model.updateSizes(textPaint)
-    }
-
-    fun relayout() {
-        if (isWordSync) syncRenderer.updateLayout(_model, lineState, measuredWidth, measuredHeight)
-    }
-
-    override fun updateColor(primary: IntArray, background: IntArray, highlight: IntArray) {
-        primaryColors = primary
-        backgroundColors = background
-        highlightColors = highlight
-
-        textPaint.apply {
-            if (primary.isEmpty()) {
-                color = Color.BLACK
-                shader = null
-            } else {
-                color = primary.firstOrNull() ?: Color.BLACK
-                shader = if (primary.size > 1) makeRainbowShader(primary) else null
-            }
-        }
-        syncRenderer.setColors(background, highlight)
-        invalidate()
-    }
-
-    fun reset() {
-        animator.stop()
-        lineState.reset()
-        scrollRenderer.reset(lineState)
-        syncRenderer.reset(lineState)
-        _model = emptyLyricModel()
-        activeRenderer = scrollRenderer
-        refreshSizes()
+        refreshModelSizes()
         invalidate()
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        if (changed) relayout()
+        if (changed) syllable.reLayout()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (w > 0 && h > 0) {
-            refreshSizes()
-            updateColorsIfReady()
-        }
+    fun reLayout() {
+        if (isSyllableMode()) syllable.reLayout()
     }
 
-    override fun onDraw(canvas: Canvas) {
-        activeRenderer.draw(canvas, _model, textPaint, lineState, measuredWidth, measuredHeight)
-    }
-
-    override fun getLeftFadingEdgeStrength(): Float {
-        if (lineWidth <= width || horizontalFadingEdgeLength <= 0) return 0f
-        val edgeL = horizontalFadingEdgeLength.toFloat()
-
-        val offsetInUnit = if (isPlainText) {
-            scrollRenderer.scrollProgress
-        } else {
-            -lineState.scrollOffset
-        }
-
-        if (offsetInUnit <= 0f) return 0f
-        if (isPlainText && offsetInUnit > lineWidth) return 0f
-        return (offsetInUnit / edgeL).coerceIn(0f, 1f)
-    }
-
-    override fun getRightFadingEdgeStrength(): Float {
-        if (lineWidth <= width || horizontalFadingEdgeLength <= 0) return 0f
-        val viewW = width.toFloat()
-        val edgeL = horizontalFadingEdgeLength.toFloat()
-
-        if (isPlainText) {
-            if (lineState.isScrollFinished) {
-                val remaining = lineWidth + lineState.scrollOffset - viewW
-                return (remaining / edgeL).coerceIn(0f, 1f)
-            }
-            val offsetInUnit = scrollRenderer.scrollProgress
-            val primaryRightEdge = lineWidth - offsetInUnit
-            val ghostLeftEdge = primaryRightEdge + ghostSpacing
-            return if (primaryRightEdge < viewW && ghostLeftEdge > viewW) 0f else 1.0f
-        } else {
-            if (isFinished) return 0f
-        }
-
-        val remaining = lineWidth + lineState.scrollOffset - viewW
-        return (remaining / edgeL).coerceIn(0f, 1f)
-    }
-
-    override fun onMeasure(wSpec: Int, hSpec: Int) {
-        val w = MeasureSpec.getSize(wSpec)
-        val charMotionPadding = if (isWordCharMotionEnabled) {
-            val maxLift = maxOf(wordMotion.cjkLiftFactor, wordMotion.latinLiftFactor)
-            ceil(textPaint.textSize * maxLift).toInt()
-        } else {
-            0
-        }
-        val textHeight = (textPaint.descent() - textPaint.ascent()).toInt() + charMotionPadding
-        setMeasuredDimension(w, resolveSize(textHeight, hSpec))
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
     }
 
     override fun onDetachedFromWindow() {
@@ -297,50 +103,312 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         reset()
     }
 
-    private fun startScrolling() {
-        if (!isPlainText || !scrollUnlocked || scrollStarted) return
-        scrollStarted = true
-        lineState.reset()
-        if (!isOverflow) return
+    private var primaryColor: IntArray = intArrayOf()
+    private var backgroundColor: IntArray = intArrayOf()
+    private var highlightColor: IntArray = intArrayOf()
+
+    private fun updateColorInternal() {
+        if (primaryColor.isNotEmpty()
+            && backgroundColor.isNotEmpty()
+            && highlightColor.isNotEmpty()
+        ) {
+            updateColor(primaryColor, backgroundColor, highlightColor)
+        }
+    }
+
+    // private var lastColorHash = 0
+    override fun updateColor(primary: IntArray, background: IntArray, highlight: IntArray) {
+//        var hash = primary.contentHashCode()
+//        hash = hash * 31 + background.contentHashCXode()
+//        hash = hash * 31 + highlight.contentHashCode()
+//
+//        if (hash == lastColorHash) return
+//        lastColorHash = hash
+
+        primaryColor = primary
+        backgroundColor = background
+        highlightColor = highlight
+
+        textPaint.apply {
+            if (primary.isEmpty()) {
+                color = Color.BLACK
+                shader = null
+            } else {
+                color = primary.firstOrNull() ?: Color.BLACK
+                shader = if (primary.size > 1) {
+                    createRainbowShader(primary)
+                } else {
+                    null
+                }
+            }
+        }
+        syllable.setColor(background, highlight)
+        invalidate()
+
+        if (DEBUG) Log.d(TAG, "updateColor: $primary, $background, $highlight")
+    }
+
+    fun setStyle(configs: LyricLineConfig) {
+        val textConfig = configs.text
+        val marqueeConfig = configs.marquee
+        val syllableConfig = configs.syllable
+
+        textPaint.apply {
+            textSize = textConfig.textSize
+            typeface = textConfig.typeface
+
+            val textColor = textConfig.textColor
+            if (textColor.isEmpty()) {
+                color = Color.BLACK
+                shader = null
+            } else {
+                color = textConfig.textColor.firstOrNull() ?: Color.RED
+                shader = if (textColor.size > 1) {
+                    createRainbowShader(textColor)
+                } else {
+                    null
+                }
+            }
+        }
+
+        syllable.setColor(
+            syllableConfig.backgroundColor,
+            syllableConfig.highlightColor
+        )
+        syllable.setTextSize(textConfig.textSize)
+        syllable.setTypeface(textConfig.typeface)
+        syllable.isGradientEnabled = configs.gradientProgressStyle
+
+        marquee.apply {
+            ghostSpacing = marqueeConfig.ghostSpacing
+            scrollSpeed = marqueeConfig.scrollSpeed
+            initialDelayMs = marqueeConfig.initialDelay
+            loopDelayMs = marqueeConfig.loopDelay
+            repeatCount = marqueeConfig.repeatCount
+            stopAtEnd = marqueeConfig.stopAtEnd
+        }
+
+        if (configs.fadingEdgeLength <= 0) {
+            setFadingEdgeLength(0)
+            isHorizontalFadingEdgeEnabled = false
+        } else {
+            setFadingEdgeLength(configs.fadingEdgeLength)
+            isHorizontalFadingEdgeEnabled = true
+        }
+
+        refreshModelSizes()
+
+        animationDriver.stop()
+        animationDriver.startIfNoRunning()
+
+        updateColorInternal()
+        invalidate()
+    }
+
+    fun isSyllableMode(): Boolean = !isMarqueeMode()
+
+    fun seekTo(position: Long) {
+        if (isSyllableMode()) {
+            syllable.seek(position)
+            animationDriver.startIfNoRunning()
+        } else if (isMarqueeMode()) {
+            startMarqueeInternal()
+        }
+    }
+
+    fun setPosition(position: Long) {
+        if (isSyllableMode()) {
+            if (syllable.isScrollOnly && !isOverflow()) {
+                return
+            }
+            syllable.updateProgress(position)
+
+            if (syllable.isPlaying && !syllable.isFinished) {
+                animationDriver.startIfNoRunning()
+            }
+        } else if (isMarqueeMode()) {
+            startMarqueeInternal()
+        }
+    }
+
+    fun refreshModelSizes() {
+        lyric.updateSizes(textPaint)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            refreshModelSizes()
+            updateColorInternal()
+            // 宽度变化时（超级岛出现/消失触发 requestLayout），重置 isMarqueeStarted，
+            // 允许 startMarqueeInternal 重新评估是否需要滚动。
+            // marquee.reset() 会清掉 _isFinished，避免竞态窗口中被 markFinished 的 marquee 永久锁死。
+            if (w != oldw) {
+                isMarqueeStarted = false
+                marquee.reset()
+            }
+            // layout 完成后补一次 marquee 启动尝试，处理 startMarqueeInternal() 在 width=0 时被延迟的情况
+            startMarqueeInternal()
+        }
+    }
+
+    override fun getLeftFadingEdgeStrength(): Float {
+        // 基础检查：文本未溢出或未开启渐隐
+        if (lyricWidth <= width || horizontalFadingEdgeLength <= 0) return 0f
+
+        val offsetInUnit = if (isMarqueeMode()) {
+            marquee.currentUnitOffset
+        } else {
+            -scrollXOffset
+        }
+
+        // 1. 如果还在起始延迟或位移为0，无左渐隐
+        if (offsetInUnit <= 0f) return 0f
+
+        // 2. 行业级处理：处理间距区域（Space Area）
+        // 如果当前位移超过了歌词文本宽度，说明左边缘现在处于空白间距中，不应有渐变
+        if (isMarqueeMode() && offsetInUnit > lyricWidth) {
+            return 0f
+        }
+
+        // 3. 计算渐入：位移从 0 到 fadingEdgeLength 过程中线性增加强度
+        val edgeL = horizontalFadingEdgeLength.toFloat()
+        return (offsetInUnit / edgeL).coerceIn(0f, 1f)
+    }
+
+    override fun getRightFadingEdgeStrength(): Float {
+        // 基础检查
+        if (lyricWidth <= width || horizontalFadingEdgeLength <= 0) return 0f
+
+        val viewW = width.toFloat()
+        val edgeL = horizontalFadingEdgeLength.toFloat()
+
+        if (isMarqueeMode()) {
+            // 如果处于结束停止状态（stopAtEnd），根据剩余内容长度计算
+            if (isScrollFinished) {
+                val remaining = lyricWidth + scrollXOffset - viewW
+                return (remaining / edgeL).coerceIn(0f, 1f)
+            }
+
+            // --- 核心逻辑：判断空白区 ---
+            val offsetInUnit = marquee.currentUnitOffset
+
+            // 主体文本的右边缘在屏幕上的坐标
+            val primaryRightEdge = lyricWidth - offsetInUnit
+            // 鬼影文本的左边缘在屏幕上的坐标
+            val ghostLeftEdge = primaryRightEdge + marquee.ghostSpacing
+
+            // 如果【主体右边缘】已经滑过屏幕右侧（进入屏幕），
+            // 且【鬼影左边缘】还没有到达屏幕右侧，说明此时右边缘是空白
+            return if (primaryRightEdge < viewW && ghostLeftEdge > viewW) {
+                0f
+            } else {
+                // 内容还在持续（主体还没走完，或者鬼影已经进场）
+                1.0f
+            }
+        } else if (isSyllableMode()) {
+            if (isPlayFinished()) {
+                return 0f
+            }
+        }
+
+        // 非跑马灯模式（逐字模式）：常规计算
+        val remaining = lyricWidth + scrollXOffset - viewW
+        return (remaining / edgeL).coerceIn(0f, 1f)
+    }
+
+    fun setLyric(rawLine: LyricLine?) {
+        val line = if (rawLine?.text.isNullOrBlank()) null else rawLine
+
+        Log.d(TAG, "setLyric: ${hashCode()} :$line")
+        reset()
+
+        unlockMarquee = false
+        isMarqueeStarted = false
+
+        lyric = line?.normalize()?.createModel() ?: emptyLyricModel()
+
+        refreshModelSizes()
+        updateColorInternal()
+        invalidate()
+    }
+
+    private var unlockMarquee = false
+    private var isMarqueeStarted = false
+    fun reqStartMarquee() {
+        doOnAttach {
+            unlockMarquee = true
+        }
+    }
+
+    private fun startMarqueeInternal() {
+        if (!isMarqueeMode()) {
+            return
+        }
+
+        if (!unlockMarquee) return
+
+        if (isMarqueeStarted) return
+        isMarqueeStarted = true
+
+        scrollXOffset = 0f
         post {
-            scrollRenderer.update(_model, lineState, 0, measuredWidth, measuredHeight)
-            animator.stop()
-            animator.startIfNeeded()
+            // View 还未完成 layout，width=0 时 isOverflow 会误判为 true，延迟到 onSizeChanged 再启动
+            if (width == 0) {
+                isMarqueeStarted = false
+                return@post
+            }
+            marquee.reset()
+            marquee.start()
+            animationDriver.stop()
+            animationDriver.startIfNoRunning()
         }
     }
 
-    private fun updateColorsIfReady() {
-        if (primaryColors.isNotEmpty() && backgroundColors.isNotEmpty() && highlightColors.isNotEmpty()) {
-            updateColor(primaryColors, backgroundColors, highlightColors)
-        }
+    fun isMarqueeMode(): Boolean = lyric.isPlainText
+    // +1f 容差：lyricWidth 是 paint.measureText() 的亚像素浮点值，measuredWidth 是 layout
+    // 后的整型像素。两者相差仅几个亚像素时（< 1px），视觉上文字完全能放下，不应触发滚动。
+    // 不加容差时，lyricWidth=431.1f vs measuredWidth=431 → true → 误触发跑马灯。
+    fun isOverflow(): Boolean = lyricWidth > measuredWidth + 1f
+
+    override fun onDraw(canvas: Canvas) {
+        if (isMarqueeMode()) marquee.draw(canvas) else syllable.draw(canvas)
     }
 
-    private var rainbowShader: Shader? = null
-    private var rainbowShaderHash = 0
-    private var rainbowShaderWidth = -1f
-
-    private fun makeRainbowShader(colors: IntArray): Shader {
-        val hash = colors.contentHashCode()
-        if (rainbowShader != null && rainbowShaderHash == hash && rainbowShaderWidth == lineWidth) {
-            return rainbowShader!!
-        }
-        val positions = FloatArray(colors.size) { i -> i.toFloat() / (colors.size - 1) }
-        rainbowShader =
-            LinearGradient(0f, 0f, lineWidth, 0f, colors, positions, Shader.TileMode.CLAMP)
-        rainbowShaderHash = hash
-        rainbowShaderWidth = lineWidth
-        return rainbowShader!!
+    fun isPlayStarted(): Boolean = if (isMarqueeMode()) {
+        true
+    } else {
+        syllable.isStarted
     }
 
-    private inner class Animator : Choreographer.FrameCallback {
+    fun isPlaying(): Boolean = if (isMarqueeMode()) {
+        !marquee.isAnimationFinished()
+    } else {
+        syllable.isPlaying
+    }
+
+    fun isPlayFinished(): Boolean = if (isMarqueeMode()) {
+        marquee.isAnimationFinished()
+    } else {
+        (syllable.lastPosition >= lyric.end)
+                || syllable.isFinished
+    }
+
+    override fun toString(): String {
+        return "LyricLineView{lyric=$lyric,isVisible=$isVisible, lyricWidth=$lyricWidth, lyricHeight=$measuredHeight, isGradientEnabled=${syllable.isGradientEnabled}, scrollXOffset=$scrollXOffset, isScrollFinished=$isScrollFinished, isPlayFinished=${isPlayFinished()}, isPlaying=${isPlaying()}, isPlayStarted=${isPlayStarted()}, isOverflow=${isOverflow()}, isMarqueeMode=${isMarqueeMode()}, isSyllableMode=${isSyllableMode()}, isAttachedToWindow=$isAttachedToWindow"
+    }
+
+    internal inner class AnimationDriver : Choreographer.FrameCallback {
         private var running = false
         private var lastFrameNanos = 0L
 
-        fun startIfNeeded() {
+        fun startIfNoRunning() {
             if (!running && isAttachedToWindow) {
                 running = true
                 lastFrameNanos = 0L
-                post { Choreographer.getInstance().postFrameCallback(this) }
+                post {
+                    Choreographer.getInstance().postFrameCallback(this)
+                }
             }
         }
 
@@ -359,13 +427,58 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             val deltaNanos = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
             lastFrameNanos = frameTimeNanos
 
-            val renderer = activeRenderer
-            val changed = renderer.step(deltaNanos, _model, lineState, measuredWidth)
-            if (changed) postInvalidateOnAnimation()
+            val isMarqueeMode = isMarqueeMode()
+            val isOverflow = isOverflow()
+            val isSyllableMode = isSyllableMode()
+
+            if (isMarqueeMode) {
+                if (!isOverflow || marquee.isAnimationFinished()) {
+                    marquee.step(deltaNanos)
+                    postInvalidateOnAnimation()
+                    return
+                }
+            }
+
+            if (isSyllableMode) {
+                if (isPlayFinished() || (syllable.isScrollOnly && !isOverflow)) {
+                    syllable.onFrameUpdate(frameTimeNanos)
+                    postInvalidateOnAnimation()
+                    return
+                }
+            }
+
+            var hasChanged = false
+            if (isMarqueeMode) {
+                marquee.step(deltaNanos)
+                hasChanged = true
+            } else if (isSyllableMode) {
+                hasChanged = syllable.onFrameUpdate(frameTimeNanos)
+            }
+
+            if (hasChanged) postInvalidateOnAnimation()
 
             if (running) {
                 Choreographer.getInstance().postFrameCallback(this)
+                //Log.d("LyricLineView", "AnimationDriver.doFrame: $frameTimeNanos")
             }
         }
+    }
+
+    private fun createRainbowShader(colors: IntArray): Shader {
+        val positions = FloatArray(colors.size) { i ->
+            i.toFloat() / (colors.size - 1)
+        }
+        val shader = LinearGradient(
+            0f, 0f, lyricWidth, 0f,
+            colors, positions,
+            Shader.TileMode.CLAMP
+        )
+        return shader
+    }
+
+    override fun onMeasure(wSpec: Int, hSpec: Int) {
+        val w = MeasureSpec.getSize(wSpec)
+        val textHeight = (textPaint.descent() - textPaint.ascent()).toInt()
+        setMeasuredDimension(w, resolveSize(textHeight, hSpec))
     }
 }

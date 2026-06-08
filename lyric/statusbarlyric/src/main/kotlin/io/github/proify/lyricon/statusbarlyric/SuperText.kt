@@ -18,18 +18,15 @@ import io.github.proify.android.extensions.dp
 import io.github.proify.android.extensions.sp
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.TextStyle
-import io.github.proify.lyricon.lyric.view.AnimParams
-import io.github.proify.lyricon.lyric.view.Highlight
+import io.github.proify.lyricon.lyric.view.DefaultMarqueeConfig
 import io.github.proify.lyricon.lyric.view.LyricPlayerView
-import io.github.proify.lyricon.lyric.view.LyricViewStyle
-import io.github.proify.lyricon.lyric.view.Marquee
 import io.github.proify.lyricon.lyric.view.RichLyricLineView
-import io.github.proify.lyricon.lyric.view.TextLook
-import io.github.proify.lyricon.lyric.view.TitleSlot
-import io.github.proify.lyricon.lyric.view.WordMotion
 import java.io.File
 import kotlin.math.min
 
+/**
+ * 高级歌词文本渲染控件，支持逐字染色、跑马灯及间奏监听。
+ */
 class SuperText(context: Context) : LyricPlayerView(context) {
 
     @Suppress("unused")
@@ -40,21 +37,36 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         private const val MAX_FONT_WEIGHT: Int = 1000
     }
 
+    /**
+     * 关联的系统 TextView，用于同步默认的字体、字号等样式。
+     */
     var linkedTextView: TextView? = null
 
+    /**
+     * 歌词事件监听器
+     */
     var eventListener: EventListener? = null
 
     private var currentStatusColor = StatusColor()
     private var currentLyricStyle: LyricStyle? = null
 
+    /**
+     * 事件监听接口
+     */
     interface EventListener {
+        /** 进入间奏模式 */
         fun enteringInterludeMode(duration: Long)
+
+        /** 退出间奏模式 */
         fun exitInterludeMode()
     }
 
     init {
         tag = VIEW_TAG
+        //setBackgroundColor(Color.CYAN)
     }
+
+    // --- 生命周期/重写方法 ---
 
     override fun enteringInterludeMode(duration: Long) {
         super.enteringInterludeMode(duration)
@@ -66,72 +78,79 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         eventListener?.exitInterludeMode()
     }
 
+    // --- 公开 API ---
+
+    /**
+     * 应用全量歌词样式。
+     *
+     * @param style 歌词样式配置
+     */
     fun applyStyle(style: LyricStyle) {
         this.currentLyricStyle = style
         val textStyle = style.packageStyle.text
 
+        // 应用过渡配置
         setTransitionConfig(textStyle.transitionConfig)
+
+        // 更新容器布局（Margin/Padding）
         updateContainerLayout(textStyle)
 
-        val resolvedTypeface = resolveTypeface(textStyle)
-        val fontSize = if (textStyle.textSize > 0) {
-            textStyle.textSize.sp
-        } else {
-            linkedTextView?.textSize ?: 14f.sp
+        // 配置核心样式
+        val config = getStyle().apply {
+            val resolvedTypeface = resolveTypeface(textStyle)
+            val fontSize = if (textStyle.textSize > 0) {
+                textStyle.textSize.sp
+            } else {
+                linkedTextView?.textSize ?: 14f.sp
+            }
+
+            primary.apply {
+                this.textColor = resolvePrimaryColor(textStyle)
+                this.textSize = fontSize
+                this.typeface = resolvedTypeface
+                enableRelativeProgress = textStyle.relativeProgress
+                enableRelativeProgressHighlight = textStyle.relativeProgressHighlight
+            }
+
+            secondary.apply {
+                this.textColor = primary.textColor
+                this.textSize = fontSize * 0.76f
+                this.typeface = resolvedTypeface
+            }
+
+            this.marquee = buildMarqueeConfig(textStyle)
+            this.syllable.apply {
+                backgroundColor = resolveBgColor(textStyle)
+                highlightColor = resolveHighlightColor(textStyle)
+            }
+
+            this.gradientProgressStyle = textStyle.gradientProgressStyle
+            scaleInMultiLine = textStyle.scaleInMultiLine
+            fadingEdgeLength = textStyle.fadingEdgeLength.coerceAtLeast(0).dp
+            placeholderFormat = textStyle.placeholderFormat ?: TextStyle.Defaults.PLACEHOLDER_FORMAT
+            enableAnim = style.packageStyle.anim.enable
+            animId = style.packageStyle.anim.id
         }
 
-        setStyle(
-            LyricViewStyle(
-                primary = TextLook(
-                    color = resolvePrimaryColor(textStyle),
-                    size = fontSize,
-                    typeface = resolvedTypeface,
-                    relativeProgress = textStyle.relativeProgress,
-                    relativeHighlight = textStyle.relativeProgressHighlight,
-                ),
-                secondary = TextLook(
-                    color = resolvePrimaryColor(textStyle),
-                    size = fontSize * 0.76f,
-                    typeface = resolvedTypeface,
-                ),
-                highlight = Highlight(
-                    background = resolveBgColor(textStyle),
-                    foreground = resolveHighlightColor(textStyle),
-                ),
-                marquee = buildMarquee(textStyle),
-                wordMotion = WordMotion(
-                    enabled = textStyle.wordMotionEnabled,
-                    cjkLiftFactor = textStyle.wordMotionCjkLiftFactor,
-                    cjkWaveFactor = textStyle.wordMotionCjkWaveFactor,
-                    latinLiftFactor = textStyle.wordMotionLatinLiftFactor,
-                    latinWaveFactor = textStyle.wordMotionLatinWaveFactor,
-                ),
-                gradient = textStyle.gradientProgressStyle,
-                fadingEdge = textStyle.fadingEdgeLength.coerceAtLeast(0).dp,
-                scaleMultiLine = textStyle.scaleInMultiLine,
-                animation = AnimParams(
-                    enabled = style.packageStyle.anim.enable,
-                    presetId = style.packageStyle.anim.id,
-                    speed = style.packageStyle.anim.speed,
-                ),
-                placeholder = when (textStyle.placeholderFormat
-                    ?: TextStyle.Defaults.PLACEHOLDER_FORMAT) {
-                    TextStyle.PlaceholderFormat.NONE -> TitleSlot.NONE
-                    TextStyle.PlaceholderFormat.NAME -> TitleSlot.NAME
-                    TextStyle.PlaceholderFormat.NAME_ARTIST -> TitleSlot.NAME_ARTIST
-                    else -> TitleSlot.NAME_ARTIST
-                }
-            )
-        )
+        setStyle(config)
     }
 
+    /**
+     * 更新状态栏颜色环境，同步刷新文本及染色颜色。
+     */
     fun setStatusBarColor(color: StatusColor) {
         this.currentStatusColor = color
         refreshVisualColors()
     }
 
+    // --- 内部逻辑私有方法 ---
+
+    /**
+     * 仅刷新颜色相关的配置，不触发布局变更。
+     */
     private fun refreshVisualColors() {
         val textStyle = currentLyricStyle?.packageStyle?.text ?: return
+
         updateColor(
             primary = resolvePrimaryColor(textStyle),
             background = resolveBgColor(textStyle),
@@ -162,14 +181,14 @@ class SuperText(context: Context) : LyricPlayerView(context) {
         )
     }
 
-    private fun buildMarquee(textStyle: TextStyle) = Marquee(
-        speed = textStyle.marqueeSpeed,
-        spacing = textStyle.marqueeGhostSpacing,
-        initialDelay = textStyle.marqueeInitialDelay,
-        loopDelay = textStyle.marqueeLoopDelay,
-        repeatCount = if (textStyle.marqueeRepeatUnlimited) -1 else textStyle.marqueeRepeatCount,
-        stopAtEnd = textStyle.marqueeStopAtEnd,
-    )
+    private fun buildMarqueeConfig(textStyle: TextStyle) = DefaultMarqueeConfig().apply {
+        scrollSpeed = textStyle.marqueeSpeed
+        ghostSpacing = textStyle.marqueeGhostSpacing
+        initialDelay = textStyle.marqueeInitialDelay
+        loopDelay = textStyle.marqueeLoopDelay
+        repeatCount = if (textStyle.marqueeRepeatUnlimited) -1 else textStyle.marqueeRepeatCount
+        stopAtEnd = textStyle.marqueeStopAtEnd
+    }
 
     private fun resolvePrimaryColor(textStyle: TextStyle): IntArray {
         val customColor = textStyle.color(currentStatusColor.isLightMode)
@@ -225,6 +244,7 @@ class SuperText(context: Context) : LyricPlayerView(context) {
 
     fun shouldShow(): Boolean {
         if (isEmpty()) return false
+
         var visibleCount = 0
         forEach {
             if (it.isVisible) {

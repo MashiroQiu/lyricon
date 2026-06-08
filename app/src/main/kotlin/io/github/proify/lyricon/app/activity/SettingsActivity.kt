@@ -35,6 +35,7 @@ import io.github.proify.lyricon.app.util.AppLangUtils
 import io.github.proify.lyricon.app.util.AppThemeUtils
 import io.github.proify.lyricon.app.util.EventBus
 import io.github.proify.lyricon.app.util.resolveLanguageName
+import io.github.proify.lyricon.app.util.updateRemoteLyricStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -82,6 +83,7 @@ class SettingsActivity : BaseActivity() {
             task()
             withContext(Dispatchers.Main) {
                 EventBus.post(SettingChangedEvent)
+                updateRemoteLyricStyle()
             }
         }
     }
@@ -151,8 +153,8 @@ class SettingsActivity : BaseActivity() {
         SwitchPreference(
             checked = enable,
             startAction = { IconActions(painterResource(R.drawable.ic_core_bear)) },
-            title = stringResource(R.string.item_disable_builtin_services),
-            summary = stringResource(R.string.item_summary_disable_builtin_services),
+            title = stringResource(R.string.item_core_service_disable),
+            summary = stringResource(R.string.item_core_service_disable_summary),
             onCheckedChange = {
                 enable = it
             }

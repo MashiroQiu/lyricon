@@ -13,7 +13,9 @@ val buildTime: Long = System.currentTimeMillis()
 configure<LibraryExtension> {
     namespace = "io.github.proify.lyricon.app"
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int)
+        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
+           // minorApiLevel = 1
+        }
     }
 
     defaultConfig {
@@ -25,18 +27,6 @@ configure<LibraryExtension> {
         buildConfigField("int", "VERSION_CODE", versionCode.toString())
         buildConfigField("String", "VERSION_NAME", "\"$versionName\"")
         buildConfigField("long", "BUILD_TIME", "${buildTime}L")
-    }
-
-    flavorDimensions += "locale"
-    productFlavors {
-        create("standard") {
-            dimension = "locale"
-            buildConfigField("boolean", "ENABLE_CHINESE_CONVERSION", "false")
-        }
-        create("zh") {
-            dimension = "locale"
-            buildConfigField("boolean", "ENABLE_CHINESE_CONVERSION", "true")
-        }
     }
 
     buildTypes {
@@ -68,11 +58,8 @@ dependencies {
 
     // --- 第三方 UI 库 ---
     implementation(libs.miuix.android)
-    implementation(libs.miuix.blur)
     implementation(libs.miuix.icons)
     implementation(libs.miuix.preference)
-
-    implementation(libs.libxposed.service)
 
     implementation(libs.aboutlibraries.core)
     implementation(libs.accompanist.drawablepainter)
@@ -96,8 +83,11 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.foundation) // 包含了 foundation-layout
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
+    // 仅在必要时保留此 alpha/特定组件
+    implementation(libs.androidx.compose.remote.creation.core)
 
     // --- 单元测试 ---
     testImplementation(libs.junit)

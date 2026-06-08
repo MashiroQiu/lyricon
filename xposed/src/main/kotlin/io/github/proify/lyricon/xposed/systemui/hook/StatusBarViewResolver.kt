@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright 2026 Proify, Tomakino
  * Licensed under the Apache License, Version 2.0
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -10,10 +10,13 @@ package io.github.proify.lyricon.xposed.systemui.hook
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.view.ViewGroup
-import io.github.libxposed.api.XposedInterface
-import io.github.libxposed.api.XposedModule
+import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedHelpers
 import io.github.proify.lyricon.xposed.logger.YLog
+import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
+import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
 
 /**
  * 状态栏视图解析工具类 (StatusBarViewResolver)
@@ -49,16 +52,11 @@ object StatusBarViewResolver {
 
     /**
      * 启动拦截任务
-     * @param module XposedModule 实例
-     * @param context 系统上下文（建议使用 SystemUI 的 Context）
+     * * @param context 系统上下文（建议使用 SystemUI 的 Context）
      * @param classLoader 对应的 ClassLoader
      */
     @SuppressLint("DiscouragedApi")
-    fun init(
-        module: XposedModule,
-        context: Context,
-        classLoader: ClassLoader = context.classLoader
-    ) {
+    fun init(context: Context, classLoader: ClassLoader = context.classLoader) {
         if (isInitialized) return
 
         val targetId = context.resources.getIdentifier(
@@ -70,33 +68,53 @@ object StatusBarViewResolver {
         if (targetId == 0) return
 
         try {
-            val inflaterClass = classLoader.loadClass("android.view.LayoutInflater")
-            val inflateMethod = inflaterClass.getDeclaredMethod(
+            XposedHelpers.findAndHookMethod(
+                "android.view.LayoutInflater",
+                classLoader,
                 "inflate",
                 Int::class.javaPrimitiveType,
                 ViewGroup::class.java,
-                Boolean::class.javaPrimitiveType
-            )
+                Boolean::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    @Throws(Throwable::class)
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val currentLayoutId = param.args[0] as Int
 
-            @Suppress("ObjectLiteralToLambda")
-            module.hook(inflateMethod).intercept(object : XposedInterface.Hooker {
-                override fun intercept(chain: XposedInterface.Chain): Any? {
-                    val result = chain.proceed()
-                    val currentLayoutId = chain.args[0] as Int
-
-                    if (currentLayoutId == targetId) {
-                        val viewGroup = result as? ViewGroup
-                        viewGroup?.let { root ->
-                            notifyAll(root)
+                        if (currentLayoutId == targetId) {
+                            val viewGroup = param.result as? ViewGroup
+                            viewGroup?.let { root ->
+                                notifyAll(root)
+                            }
                         }
                     }
-                    return result
                 }
-
-            })
+            )
             isInitialized = true
         } catch (t: Throwable) {
             YLog.error("StatusBarViewResolver", "Error during LayoutInflater inflation hook", t)
+        }
+
+        // Hook PhoneStatusBarView.onConfigurationChanged 感知横竖屏
+        // 横屏时通知 MiuiIslandHooker，让其静默丢弃岛回调并恢复时钟/歌词正常显示
+        try {
+            XposedHelpers.findAndHookMethod(
+                "com.android.systemui.statusbar.phone.PhoneStatusBarView",
+                classLoader,
+                "onConfigurationChanged",
+                Configuration::class.java,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val config = param.args[0] as? Configuration ?: return
+                        val landscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE
+                        // 先通知 MiuiIslandHooker（让其静默丢弃后续岛回调，横屏时强制发出 null 通知）
+                        MiuiIslandHooker.onOrientationChanged(landscape)
+                        // 再通知 LyricViewController（隐藏歌词 View、恢复时钟、重置 userShowClock）
+                        LyricViewController.onOrientationChanged(landscape)
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            YLog.error("StatusBarViewResolver", "orientation hook failed: ${t.message}", t)
         }
     }
 

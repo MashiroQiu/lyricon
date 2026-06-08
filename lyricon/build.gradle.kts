@@ -9,17 +9,18 @@ configure<ApplicationExtension> {
     namespace = rootProject.extra["appPackageName"] as String
 
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int)
+        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
+           /// minorApiLevel = 1
+        }
     }
 
     packaging {
-        resources {
+        resources{
             excludes.addAll(
                 listOf(
-                    "META-INF/**/LICENSE*",
-                    "META-INF/**/NOTICE*",
-                    "META-INF/*.version",
-                    "DebugProbesKt.bin"
+                    "/META-INF/LICENSE*",
+                    "/META-INF/NOTICE*",
+                    "/META-INF/*.txt"
                 )
             )
         }
@@ -49,17 +50,6 @@ configure<ApplicationExtension> {
         }
     }
 
-    flavorDimensions += "locale"
-    productFlavors {
-        create("standard") {
-            dimension = "locale"
-        }
-        create("zh") {
-            dimension = "locale"
-            versionNameSuffix = "-zh"
-        }
-    }
-
     signingConfigs {
         create("release") {
             storeFile = file(System.getenv("RELEASE_STORE_FILE") ?: "release.jks")
@@ -71,7 +61,7 @@ configure<ApplicationExtension> {
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("release")
+            // 使用系统默认 debug 签名
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")

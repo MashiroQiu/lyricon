@@ -11,7 +11,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 
-internal val json: Json = Json {
+val json: Json = Json {
     coerceInputValues = true     // 尝试转换类型
     ignoreUnknownKeys = true     // 忽略未知字段
     isLenient = true             // 宽松的 JSON 语法

@@ -10,14 +10,6 @@ package io.github.proify.android.extensions
 
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.view.isVisible
-
-
-var View.isVisibleIfChanged: Boolean
-    get() = isVisible
-    set(value) {
-        if (isVisible != value) isVisible = value
-    }
 
 var View.visibilityIfChanged: Int
     get() = visibility
@@ -26,10 +18,4 @@ var View.visibilityIfChanged: Int
     }
 
 fun ViewGroup.getChildAtOrNull(index: Int): View? =
-    if (childCount > index) {
-        try {
-            getChildAt(index)
-        } catch (e: Exception) {
-            null
-        }
-    } else null
+    if (childCount > index) getChildAt(index) else null

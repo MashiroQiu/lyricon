@@ -102,7 +102,7 @@ class LyricProviderActivity : BaseActivity() {
         }
 
         AppToolBarListContainer(
-            title = getString(R.string.activity_lyric_provider_services),
+            title = getString(R.string.activity_lyric_provider),
             canBack = true,
             // 关闭外层容器的空视图管理，由 LazyColumn 内部根据状态精细控制
             showEmpty = false,
@@ -221,7 +221,7 @@ class LyricProviderActivity : BaseActivity() {
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = stringResource(
-                    if (noQueryPermission) R.string.message_query_app_permission_required
+                    if (noQueryPermission) R.string.no_query_app_permission
                     else R.string.no_provider_available
                 ),
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary

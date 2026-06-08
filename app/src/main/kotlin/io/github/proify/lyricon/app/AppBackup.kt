@@ -8,11 +8,11 @@ package io.github.proify.lyricon.app
 
 import android.content.SharedPreferences
 import android.util.Log
+import io.github.proify.android.extensions.defaultSharedPreferencesName
 import io.github.proify.android.extensions.deflate
-import io.github.proify.android.extensions.getPrivateSharedPreferences
+import io.github.proify.android.extensions.getWorldReadableSharedPreferences
 import io.github.proify.android.extensions.inflate
-import io.github.proify.lyricon.app.util.LyricPrefs
-import io.github.proify.lyricon.app.util.LyricPrefs.getLyricStylePrefNames
+import io.github.proify.lyricon.app.bridge.AppBridge
 import io.github.proify.lyricon.app.util.editCommit
 import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_AI_TRANSLATION_API_KEY
 import org.json.JSONArray
@@ -22,7 +22,7 @@ import java.io.OutputStream
 
 object AppBackup {
 
-    private const val TAG = "AppBackup"
+    private const val TAG = "BackupManager"
 
     private val BLACKLIST_KEYS = listOf(
         KEY_AI_TRANSLATION_API_KEY
@@ -34,7 +34,7 @@ object AppBackup {
         return runCatching {
             val root = JSONObject()
             map.forEach { (name, entries) ->
-                root.put(name, entriesToJsonObject(entries))
+                root.put(name, entriesToJson(entries))
             }
 
             val bytes = root.toString()
@@ -65,24 +65,30 @@ object AppBackup {
     }
 
     private fun collectAllPrefs(): Map<String, Map<String, *>> {
-        val prefNames = getLyricStylePrefNames()
+        val app = LyriconApp.get()
+        val dir = AppBridge.getPreferenceDirectory(app)
+        val defaultName = app.defaultSharedPreferencesName
 
         val result = mutableMapOf<String, Map<String, *>>()
 
-        val context = LyriconApp.get()
-        prefNames.forEach { name ->
-            val prefs = when {
-                LyricPrefs.isLyricStylePrefName(name) -> LyricPrefs.getSharedPreferences(name)
-                else -> context.getPrivateSharedPreferences(name)
-            }
+        //跳过默认
+        val files = dir.listFiles { f ->
+            f.isFile && f.extension == "xml" && f.nameWithoutExtension != defaultName
+        } ?: return emptyMap()
+
+        files.forEach { file ->
+            val name = file.nameWithoutExtension
+            val prefs = app.getWorldReadableSharedPreferences(name)
             val entries = prefs.all
-            result[name] = entries
+            if (entries.isNotEmpty()) {
+                result[name] = entries
+            }
         }
 
         return result
     }
 
-    private fun entriesToJsonObject(entries: Map<String, *>): JSONObject {
+    private fun entriesToJson(entries: Map<String, *>): JSONObject {
         val jo = JSONObject()
         entries.forEach { (k, v) ->
             if (k in BLACKLIST_KEYS) return@forEach
@@ -96,26 +102,19 @@ object AppBackup {
     }
 
     private fun applyJsonToPrefs(root: JSONObject) {
+        val app = LyriconApp.get()
         val names = root.keys()
-        val context = LyriconApp.get()
-
         while (names.hasNext()) {
-            val prefsName = names.next().takeIf { it.isNotBlank() } ?: continue
+            val prefsName = names.next()
             val prefsJson = root.optJSONObject(prefsName) ?: continue
-            val prefs = when {
-                LyricPrefs.isLyricStylePrefName(prefsName) -> LyricPrefs.getSharedPreferences(
-                    prefsName
-                )
-
-                else -> context.getPrivateSharedPreferences(prefsName)
-            }
+            val prefs = app.getWorldReadableSharedPreferences(prefsName)
             writeJsonToPrefs(prefs, prefsJson)
         }
     }
 
     private fun writeJsonToPrefs(prefs: SharedPreferences, json: JSONObject) {
         prefs.editCommit {
-            //clear()
+            clear()
             val keys = json.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
@@ -154,5 +153,4 @@ object AppBackup {
             }
         }
     }
-
 }

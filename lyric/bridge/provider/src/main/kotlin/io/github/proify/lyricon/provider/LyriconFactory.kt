@@ -11,24 +11,24 @@ import android.app.Application
 import android.content.Context
 import android.os.Build
 import io.github.proify.lyricon.provider.impl.EmptyProvider
-import io.github.proify.lyricon.provider.impl.LyriconProviderImpl
+import io.github.proify.lyricon.provider.impl.ProviderV27Impl
 
-/** 创建 [LyriconProvider] 的工厂。 */
+/**
+ * LyriconProvider 工厂对象
+ */
 object LyriconFactory {
 
     /**
-     * 使用基础字段创建歌词提供端。
+     * 创建歌词提供者
      *
-     * Android 8.1 以下系统不支持当前 Binder/SharedMemory 通道，会返回空实现。
-     *
-     * @param context 用于注册中心服务广播接收器和读取进程信息的上下文。
-     * @param providerPackageName 提供端应用包名，默认使用当前应用包名。
-     * @param playerPackageName 播放器应用包名，默认与 [providerPackageName] 相同。
-     * @param logo 提供端或播放器图标。
-     * @param metadata 提供端附加元数据。
-     * @param processName 播放器进程名，默认读取当前进程名。
-     * @param providerService 暴露给中心服务调用的本地命令处理器。
-     * @param centralPackageName 中心服务所在包名。
+     * @param context 上下文
+     * @param providerPackageName 提供者包名
+     * @param playerPackageName 播放器包名
+     * @param logo Provider 的图标信息
+     * @param metadata Provider 的元数据描述
+     * @param processName 播放器进程名
+     * @param providerService 本地服务实现
+     * @param centralPackageName 中央服务实现包名
      */
     fun createProvider(
         context: Context,
@@ -53,13 +53,12 @@ object LyriconFactory {
     )
 
     /**
-     * 使用完整 [ProviderInfo] 创建歌词提供端。
+     * 创建歌词提供者
      *
-     * @param context 用于注册中心服务广播接收器的上下文。
-     * @param providerInfo 提供端注册信息。
-     * @param providerService 暴露给中心服务调用的本地命令处理器。
-     * @param centralPackageName 中心服务所在包名。
-     * @return 可用于注册中心服务的提供端实例。
+     * @param context 上下文
+     * @param providerInfo Provider 的基础信息封装
+     * @param providerService 本地服务实现
+     * @param centralPackageName 中央服务实现包名
      */
     fun createProvider(
         context: Context,
@@ -71,7 +70,7 @@ object LyriconFactory {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             initialize(context)
 
-            return LyriconProviderImpl(
+            return ProviderV27Impl(
                 context,
                 providerInfo,
                 providerService,
@@ -88,7 +87,7 @@ object LyriconFactory {
         }
     }
 
-    private fun getCurrentProcessName(context: Context): String? {
+   private fun getCurrentProcessName(context: Context): String? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Application.getProcessName()
         } else {

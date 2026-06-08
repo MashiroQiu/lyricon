@@ -39,20 +39,20 @@ inline var View.visibleIfChanged: Boolean
         if (isVisible != value) isVisible = value
     }
 
-inline val Int.dp: Int
+internal inline val Int.dp: Int
     get() = toFloat().dp.roundToInt()
 
-inline val Int.dpf
+internal inline val Int.dpf
     get() = toFloat().dp
 
-inline val Float.dp: Float
+internal inline val Float.dp: Float
     get() = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,
         this,
         Resources.getSystem().displayMetrics
     )
 
-inline val Float.sp
+internal inline val Float.sp
     get() = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_SP,
         this,
