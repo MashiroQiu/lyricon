@@ -188,7 +188,10 @@ data class BasicStyle(
         const val XIAOMI_ISLAND_TEMP_HIDE_ENABLED: Boolean = true
         val MARGINS: RectF = RectF()
         val PADDINGS: RectF = RectF()
-        val VISIBILITY_RULES: List<VisibilityRule> = emptyList()
+        val VISIBILITY_RULES: List<VisibilityRule> = listOf(
+            VisibilityRule("clock", VisibilityRule.MODE_HIDE_WHEN_PLAYING),
+            VisibilityRule("notification_icon_area", VisibilityRule.MODE_HIDE_WHEN_PLAYING)
+        )
         const val HIDE_ON_LOCK_SCREEN: Boolean = true
         const val NO_LYRIC_HIDE_TIMEOUT: Int = 0
         const val NO_UPDATE_HIDE_TIMEOUT: Int = 0

@@ -8,6 +8,9 @@ package io.github.proify.lyricon.app
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import io.github.proify.lyricon.app.bridge.AppBridge
+import io.github.proify.android.extensions.json
+import io.github.proify.lyricon.lyric.style.BasicStyle
+import kotlinx.serialization.encodeToString
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
@@ -30,6 +33,18 @@ class LyriconApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val stylePrefs = getSharedPreferences(AppBridge.LyricStylePrefs.PREF_NAME_BASE_STYLE, MODE_PRIVATE)
+        val migrationKey = "xy21_default_hidden_views_v1"
+        if (!stylePrefs.getBoolean(migrationKey, false)) {
+            val rulesKey = "lyric_style_base_visibility_rules"
+            val saved = stylePrefs.getString(rulesKey, null)?.filterNot { it.isWhitespace() }
+            val editor = stylePrefs.edit().putBoolean(migrationKey, true)
+            // Adopt the new defaults once; keep existing custom controller rules.
+            if (saved == null || saved == "[]") {
+                editor.putString(rulesKey, json.encodeToString(BasicStyle.Defaults.VISIBILITY_RULES))
+            }
+            editor.apply()
+        }
         // Reuse the existing config and back up files; no world-readable filesystem access.
         dataDir.resolve("shared_prefs").listFiles()?.filter { it.extension == "xml" }?.forEach {
             getSharedPreferences(it.nameWithoutExtension, MODE_PRIVATE)

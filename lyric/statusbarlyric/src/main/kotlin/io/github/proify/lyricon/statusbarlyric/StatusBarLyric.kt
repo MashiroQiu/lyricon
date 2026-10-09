@@ -486,7 +486,7 @@ class StatusBarLyric(
      */
     private fun calculateIslandAwareWidth(rect: Rect): Int {
         val islandLeft = rect.left
-        val maxWidth = (islandLeft - cachedContainerScreenLeft).coerceAtLeast(1)
+        val maxWidth = (islandLeft - cachedContainerScreenLeft + 2).coerceAtLeast(1)
         Log.d(TAG, "calculateIslandAwareWidth: islandLeft=$islandLeft cachedContainerScreenLeft=$cachedContainerScreenLeft maxWidth=$maxWidth")
         return maxWidth
     }
@@ -507,7 +507,7 @@ class StatusBarLyric(
         val cameraLeft = cutout?.left?.plus(windowOffset)
             ?: (rootScreen[0] + (root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / 2 - 12.dp)
         val lyricLeft = if (isLaidOut) lyricScreen[0] else cachedContainerScreenLeft + currentStyle.basicStyle.margins.left.dp
-        return CameraWidth.available(cameraLeft, lyricLeft, 4.dp + currentStyle.basicStyle.margins.right.dp)
+        return CameraWidth.available(cameraLeft, lyricLeft, 4.dp + currentStyle.basicStyle.margins.right.dp + 3)
     }
 
     private fun updateTextViewWidthMode(basicStyle: BasicStyle) {
