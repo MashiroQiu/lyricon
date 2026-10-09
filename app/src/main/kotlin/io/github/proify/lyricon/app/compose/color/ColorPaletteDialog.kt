@@ -22,12 +22,14 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -36,6 +38,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.proify.lyricon.app.R
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.ColorPalette
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -64,6 +67,7 @@ fun ColorPaletteDialog(
     var hexInput by remember(initialColor) { mutableStateOf(selectedColor.toHexString()) }
     val clipboard = LocalClipboard.current
     val hapticFeedback = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
 
     fun dismiss() {
         show.value = false
@@ -111,13 +115,15 @@ fun ColorPaletteDialog(
                             runCatching { selectedColor = it.parseHexColor() }
                         },
                         onCopy = {
-                            clipboard.copyText(hexInput)
+                            scope.launch { clipboard.copyText(hexInput) }
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.ContextClick)
                         },
                         onPaste = {
-                            clipboard.pasteText()?.let { text ->
-                                hexInput = text
-                                runCatching { selectedColor = text.parseHexColor() }
+                            scope.launch {
+                                clipboard.pasteText()?.let { text ->
+                                    hexInput = text
+                                    runCatching { selectedColor = text.parseHexColor() }
+                                }
                             }
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.ContextClick)
                         }
@@ -208,15 +214,12 @@ private fun DialogButtonRow(
     }
 }
 
-private fun Clipboard.copyText(text: String) {
-    nativeClipboard.setPrimaryClip(ClipData.newPlainText("color", text))
+private suspend fun Clipboard.copyText(text: String) {
+    setClipEntry(ClipEntry(ClipData.newPlainText("color", text)))
 }
 
-private fun Clipboard.pasteText(): String? {
-    val clipData = nativeClipboard.primaryClip
-    return if (clipData != null && clipData.itemCount > 0) {
-        clipData.getItemAt(0)?.text?.toString()
-    } else null
+private suspend fun Clipboard.pasteText(): String? {
+    return getClipEntry()?.clipData?.getItemAt(0)?.text?.toString()
 }
 
 private fun Color.toHexString(): String =

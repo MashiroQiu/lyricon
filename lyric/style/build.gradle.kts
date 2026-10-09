@@ -19,7 +19,7 @@ import com.android.build.api.dsl.LibraryExtension
 plugins {
     alias(libs.plugins.android.library)
     kotlin("plugin.parcelize")
-    kotlin("plugin.serialization") version "2.1.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 configure<LibraryExtension> {
@@ -54,6 +54,7 @@ configure<LibraryExtension> {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":lyric:ai"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)

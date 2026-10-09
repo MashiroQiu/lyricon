@@ -5,22 +5,21 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.compose) apply false
-    //alias(libs.plugins.ksp) apply false
-    id("com.vanniktech.maven.publish") version "0.36.0" apply false
+    id("com.vanniktech.maven.publish") version "0.37.0" apply false
     alias(libs.plugins.jetbrains.kotlin.jvm) apply false
-    id("com.mikepenz.aboutlibraries.plugin.android") version "14.0.1" apply false
+    id("com.mikepenz.aboutlibraries.plugin.android") version "15.1.1" apply false
 }
 
 extra["appPackageName"] = "io.github.proify.lyricon"
-extra["appVersionCode"] = 53
-extra["appVersionName"] = "1.0.30-beta5-xy21-release-api102"
+extra["appVersionCode"] = 54
+extra["appVersionName"] = "1.0.40.rc-xy21-api102"
 extra["compileSdkVersion"] = 37
 extra["targetSdkVersion"] = 37
-extra["minSdkVersion"] = 28
+extra["minSdkVersion"] = 29
 
-extra["providerSdkVersion"] = "0.1.70"
-extra["subscriberSdkVersion"] = "0.1.70"
-extra["lyricModelVersion"] = "0.1.70"
+extra["providerSdkVersion"] = "0.1.80"
+extra["subscriberSdkVersion"] = "0.1.80"
+extra["lyricModelVersion"] = "0.1.80"
 
 // apk自动导出
 /**
@@ -28,8 +27,9 @@ extra["lyricModelVersion"] = "0.1.70"
  */
 val cleanApks: TaskProvider<Task> = tasks.register("cleanAllApks") {
     group = "build"
+    // 在配置阶段解析路径, 避免执行期访问 project (配置缓存兼容)
+    val outputDir = project.layout.buildDirectory.dir("all-apks").get().asFile
     doFirst {
-        val outputDir = project.layout.buildDirectory.dir("all-apks").get().asFile
         if (outputDir.exists()) {
             outputDir.deleteRecursively()
             println("--- [Clean] 已清理旧的 APK 导出目录 ---")

@@ -13,6 +13,7 @@ import io.github.proify.lyricon.lyric.model.Song
  *
  * 只关心部分事件时可实现该接口并覆写需要的方法，避免写出所有回调。
  */
+@Suppress("unused")
 interface SimpleActivePlayerListener : ActivePlayerListener {
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {}
     override fun onSongChanged(song: Song?) {}

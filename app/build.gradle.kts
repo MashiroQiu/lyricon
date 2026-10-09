@@ -3,7 +3,7 @@ import com.android.build.api.dsl.LibraryExtension
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
-    kotlin("plugin.serialization") version "2.1.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val versionCode: Int = rootProject.extra["appVersionCode"] as Int
@@ -13,9 +13,7 @@ val buildTime: Long = System.currentTimeMillis()
 configure<LibraryExtension> {
     namespace = "io.github.proify.lyricon.app"
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
-           // minorApiLevel = 1
-        }
+        version = release(rootProject.extra.get("compileSdkVersion") as Int)
     }
 
     defaultConfig {
@@ -50,17 +48,22 @@ configure<LibraryExtension> {
 }
 
 dependencies {
-    implementation(libs.xposed.service)
     // --- 模块依赖 ---
     implementation(project(":bridge"))
     implementation(project(":common"))
     implementation(project(":lyric:style"))
     implementation(project(":lyric:view"))
+    implementation(project(":lyric:ai"))
 
     // --- 第三方 UI 库 ---
     implementation(libs.miuix.android)
+    implementation(libs.miuix.blur)
     implementation(libs.miuix.icons)
     implementation(libs.miuix.preference)
+    implementation(libs.multiplatform.markdown.renderer)
+    implementation(libs.okhttp)
+
+    implementation(libs.libxposed.service)
 
     implementation(libs.aboutlibraries.core)
     implementation(libs.accompanist.drawablepainter)
@@ -84,11 +87,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.foundation) // 包含了 foundation-layout
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // 仅在必要时保留此 alpha/特定组件
-    implementation(libs.androidx.compose.remote.creation.core)
 
     // --- 单元测试 ---
     testImplementation(libs.junit)

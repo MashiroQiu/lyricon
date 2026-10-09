@@ -7,17 +7,18 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.graphics.Rect
-import android.os.Handler
 import android.view.View
+import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
+import android.os.Handler
+import io.github.proify.android.extensions.crc32
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
-import io.github.proify.lyricon.statusbarlyric.SuperLogo
+import io.github.proify.lyricon.statusbarlyric.logo.CoverStrategy
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
-import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
 import io.github.proify.lyricon.xposed.systemui.lyric.StatusBarViewManager.MAIN_LOOPER
 import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import java.io.File
@@ -30,14 +31,14 @@ import java.io.File
  * @since 2026
  */
 object LyricViewController : ActivePlayerListener,
-    OplusCapsuleHooker.CapsuleStateChangeListener,
     MiuiIslandHooker.IslandStateChangeListener,
+    OplusCapsuleHooker.CapsuleStateChangeListener,
     NotificationCoverHelper.OnCoverUpdateListener {
 
     private const val TAG = "LyricViewController"
     private const val DEBUG = true
 
-    /** 当前播放状态，线程安全可见 */
+    /** 当前播放状态 */
     @Volatile
     var isPlaying: Boolean = false
         private set
@@ -57,7 +58,13 @@ object LyricViewController : ActivePlayerListener,
 
     /** 当前歌曲的逻辑播放进度（毫秒） */
     @Volatile
-    private var currentLogicPosition: Long = 0
+    var currentLogicPosition: Long = 0
+        private set
+
+    /** 当前播放歌曲（已加工），供控制窗口读取歌名/歌手/歌词 */
+    @Volatile
+    var currentSong: Song? = null
+        private set
 
     /** 用于处理 UI 刷新任务的 Handler */
     private val mainHandler by lazy { Handler(MAIN_LOOPER) }
@@ -76,8 +83,8 @@ object LyricViewController : ActivePlayerListener,
         if (DEBUG) YLog.debug(TAG, "Initializing LyricViewController...")
         // 注册数据总线、系统钩子及封面更新监听
         LyricDataHub.addListener(this)
-        OplusCapsuleHooker.registerListener(this)
         MiuiIslandHooker.registerListener(this)
+        OplusCapsuleHooker.registerListener(this)
         NotificationCoverHelper.registerListener(this)
     }
 
@@ -86,9 +93,28 @@ object LyricViewController : ActivePlayerListener,
      * @param song 新歌曲对象，若停止播放则为 null
      */
     override fun onSongChanged(song: Song?) {
+        YLog.info(TAG, "onSongChanged: $song")
+        this.currentSong = song
+
         updateAllControllers {
             lyricView.setSong(song)
             refreshTranslationVisibility(lyricView)
+        }
+
+        updateCoverFileFromSong(song)
+    }
+
+    private fun updateCoverFileFromSong(song: Song?) {
+        val activePackage = this.activePackage
+        val name = song?.name
+        val artist = song?.artist
+        if (activePackage.isBlank() || name.isNullOrBlank() || artist.isNullOrBlank()) {
+            return
+        }
+        val file = NotificationCoverHelper.getCachedCoverFile(activePackage, name, artist)
+        if (file != null && file.exists()) {
+            YLog.info(TAG, "Cover cache file found: $name - $artist")
+            updateCoverFile(file)
         }
     }
 
@@ -97,18 +123,12 @@ object LyricViewController : ActivePlayerListener,
      * @param providerInfo 播放器信息
      */
     override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
+        YLog.info(TAG, "onActiveProviderChanged: $providerInfo")
+
         this.activePackage = providerInfo?.playerPackageName.orEmpty()
         LyricPrefs.activePackageName = this.activePackage
 
-        // 切换播放器（或停止）时重置 userShowClock，避免状态残留
         updateAllControllers {
-            if (providerInfo == null && userShowClock) {
-                setUserShowClock(false)
-                // 同步清除 clock 上可能残留的 onClockClicked 监听，
-                // 防止播放器断开后 clock 僵尸监听长期残留
-                val clockId = context.resources.getIdentifier("clock", "id", context.packageName)
-                statusBarView.findViewById<View>(clockId)?.setOnClickListener(null)
-            }
             resetViewForNewPlayer(this, providerInfo)
         }
     }
@@ -119,6 +139,8 @@ object LyricViewController : ActivePlayerListener,
      */
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
         if (this.isPlaying == isPlaying) return
+        YLog.info(TAG, "onPlaybackStateChanged: $isPlaying")
+
         this.isPlaying = isPlaying
         updateAllControllers { lyricView.setPlaying(isPlaying) }
     }
@@ -147,6 +169,7 @@ object LyricViewController : ActivePlayerListener,
      * @param text 歌词文本内容
      */
     override fun onReceiveText(text: String?) {
+        YLog.info(TAG, "onReceiveText: $text")
         updateAllControllers { lyricView.setText(text) }
     }
 
@@ -155,6 +178,8 @@ object LyricViewController : ActivePlayerListener,
      * @param isDisplayTranslation 是否开启
      */
     override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) {
+        YLog.info(TAG, "onDisplayTranslationChanged: $isDisplayTranslation")
+
         this.isDisplayTranslation = isDisplayTranslation
         updateAllControllers { refreshTranslationVisibility(lyricView) }
     }
@@ -164,6 +189,8 @@ object LyricViewController : ActivePlayerListener,
      * @param isDisplayRoma 是否开启
      */
     override fun onDisplayRomaChanged(isDisplayRoma: Boolean) {
+        YLog.info(TAG, "onDisplayRomaChanged: $isDisplayRoma")
+
         this.isDisplayRoma = isDisplayRoma
         updateAllControllers { lyricView.updateDisplayTranslation(displayRoma = isDisplayRoma) }
     }
@@ -186,6 +213,9 @@ object LyricViewController : ActivePlayerListener,
         controller: StatusBarViewController,
         provider: ProviderInfo?
     ) {
+        controller.setUserShowClock(false)
+        val clockId = controller.context.resources.getIdentifier("clock", "id", controller.context.packageName)
+        controller.statusBarView.findViewById<View>(clockId)?.setOnClickListener(null)
         val view = controller.lyricView
         view.setSong(null)
         view.setPlaying(false)
@@ -195,11 +225,17 @@ object LyricViewController : ActivePlayerListener,
         view.logoView.apply {
             val pkg = provider?.playerPackageName.orEmpty()
             this.activePackage = pkg
-            val cover = if (pkg.isBlank()) null else NotificationCoverHelper.getCoverFile(pkg)
-            this.coverFile = cover
-            controller.updateCoverThemeColors(cover)
-            // Logo 加载涉及位图操作，通过 post 确保在 UI 线程执行
-            post { this.providerLogo = provider?.logo }
+//
+//            val cover =
+//                if (pkg.isBlank()) {
+//                    null
+//                } else {
+//                    NotificationCoverHelper.getLatestCoverFile(pkg)
+//                }
+//            this.coverFile = cover
+//            controller.updateCoverThemeColors(cover)
+
+            this.providerLogo = provider?.logo
         }
     }
 
@@ -239,10 +275,15 @@ object LyricViewController : ActivePlayerListener,
     }
 
     /**
-     * 屏幕方向变更回调（由 StatusBarViewResolver 的 onConfigurationChanged hook 驱动）。
-     * 横屏时：完全退出歌词显示，隐藏歌词 View，恢复时钟和所有系统控件，重置 userShowClock。
-     * 竖屏时：恢复正常状态，等待岛下次触发后重新进入歌词模式。
+     * 专辑封面更新回调。
+     * @param packageName 触发更新的播放器包名
+     * @param coverFile 封面文件对象
      */
+    override fun onCoverUpdated(packageName: String, coverFile: File) {
+        if (packageName != activePackage) return
+        updateCoverFile(coverFile)
+    }
+
     fun onOrientationChanged(landscape: Boolean) {
         YLog.debug(TAG, "onOrientationChanged: landscape=$landscape")
         if (landscape) {
@@ -251,7 +292,7 @@ object LyricViewController : ActivePlayerListener,
             // 这样任何后续的 layout pass / updateVisibility 调用都不会把歌词再显示出来
             updateAllControllers {
                 setUserShowClock(true)
-                lyricView.setOnClickListener(null)
+
                 val clockId = context.resources.getIdentifier("clock", "id", context.packageName)
                 statusBarView.findViewById<View>(clockId)?.setOnClickListener(null)
                 YLog.debug(TAG, "onOrientationChanged landscape: userShowClock set to true, lyric hidden")
@@ -263,18 +304,12 @@ object LyricViewController : ActivePlayerListener,
                 // Fix Bug2（横屏→竖屏路径）：补刷翻译行可见性
                 refreshTranslationVisibility(lyricView)
                 // 横屏时清除了 lyricView 的点击监听，竖屏恢复时补回常驻监听
-                lyricView.setOnClickListener { LyricViewController.onLyricClickedPublic(this) }
+
                 YLog.debug(TAG, "onOrientationChanged portrait: userShowClock reset, lyric restored")
             }
         }
     }
 
-    /**
-     * 小米澎湃超级岛状态变更监听。
-     * 岛出现时传入实际 Rect（屏幕绝对坐标），由 StatusBarLyric 动态计算歌词最大宽度；
-     * 岛消失时传入 null，恢复正常宽度。
-     * @param rect 超级岛的 Rect，null 表示岛已消失
-     */
     override fun onMiuiIslandChanged(rect: Rect?) {
         val isShowing = rect != null
         updateAllControllers {
@@ -305,12 +340,6 @@ object LyricViewController : ActivePlayerListener,
         }
     }
 
-    /**
-     * 用户单击歌词区→切换到时钟。
-     * 无论超级岛是否存在，歌词区始终可点击切换到时钟——岛存在时同时隐藏时钟，
-     * 岛不存在时仅隐藏歌词、恢复时钟，给用户一致的交互体验。
-     * internal 供 StatusBarViewController.onCreate 常驻注册时调用。
-     */
     internal fun onLyricClickedPublic(controller: StatusBarViewController) {
         YLog.debug(TAG, "onLyricClicked → 切换到时钟")
         controller.setUserShowClock(true)
@@ -321,9 +350,6 @@ object LyricViewController : ActivePlayerListener,
         }
     }
 
-    /**
-     * 用户单击时钟→切回歌词。
-     */
     private fun onClockClicked(controller: StatusBarViewController) {
         if (!controller.userShowClock) return
         YLog.debug(TAG, "onClockClicked → 切回歌词")
@@ -335,17 +361,23 @@ object LyricViewController : ActivePlayerListener,
         controller.statusBarView.findViewById<View>(clockId)?.setOnClickListener(null)
     }
 
-    /**
-     * 专辑封面更新回调。
-     * @param packageName 触发更新的播放器包名
-     * @param coverFile 封面文件对象
-     */
-    override fun onCoverUpdated(packageName: String, coverFile: File) {
-        if (packageName != activePackage) return
+    private var lastCoverSignature = 0L
+    private fun updateCoverFile(coverFile: File?) {
+        if (coverFile != null) {
+            val signature = coverFile.crc32()
+            if (signature == lastCoverSignature) {
+                YLog.verbose(TAG, "Cover file is the same, skip update")
+                return
+            }
+            lastCoverSignature = signature
+        } else {
+            lastCoverSignature = 0
+        }
+
         updateAllControllers {
             lyricView.logoView.apply {
                 this.coverFile = coverFile
-                (strategy as? SuperLogo.CoverStrategy)?.updateContent()
+                (strategy as? CoverStrategy)?.updateContent()
             }
             updateCoverThemeColors(coverFile)
         }

@@ -9,33 +9,31 @@ package io.github.proify.lyricon.xposed.systemui
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.core.view.doOnAttach
-import io.github.proify.lyricon.xposed.ModuleEntry
 import io.github.proify.android.extensions.deflate
 import io.github.proify.android.extensions.json
 import io.github.proify.android.extensions.safeEncode
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.app.bridge.LyriconBridge
 import io.github.proify.lyricon.central.BridgeCentral
-import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.common.util.ScreenStateMonitor
 import io.github.proify.lyricon.common.util.ViewHierarchyParser
 import io.github.proify.lyricon.subscriber.ConnectionListener
 import io.github.proify.lyricon.subscriber.LyriconFactory
 import io.github.proify.lyricon.subscriber.LyriconSubscriber
-import io.github.proify.lyricon.xposed.PackageHooker
-import io.github.proify.lyricon.xposed.logger.YLog
-import io.github.proify.lyricon.xposed.systemui.hook.ClockColorMonitor
+import io.github.proify.lyricon.xposed.ModuleEntry
+import io.github.proify.lyricon.xposed.hook.PackageHooker
 import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
+import io.github.proify.lyricon.xposed.logger.YLog
+import io.github.proify.lyricon.xposed.systemui.ai.translate.AiTranslator
 import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
+import io.github.proify.lyricon.xposed.systemui.hook.StatusBarColorMonitor
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarDisableHooker
 import io.github.proify.lyricon.xposed.systemui.hook.StatusBarViewResolver
 import io.github.proify.lyricon.xposed.systemui.hook.ViewVisibilityTracker
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricDataHub
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricPrefs
-import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
 import io.github.proify.lyricon.xposed.systemui.lyric.StatusBarViewController
 import io.github.proify.lyricon.xposed.systemui.lyric.StatusBarViewManager
-import io.github.proify.lyricon.xposed.systemui.util.AITranslator
 import io.github.proify.lyricon.xposed.systemui.util.CrashDetector
 import io.github.proify.lyricon.xposed.systemui.util.NotificationCoverHelper
 import io.github.proify.lyricon.xposed.systemui.util.SystemUIMediaUtils
@@ -56,6 +54,9 @@ object SystemUIHooker : PackageHooker() {
     private var isSafeMode = false
     private var isAppCreated = false
 
+    var subscriber: LyriconSubscriber? = null
+        private set
+
     private val mainCoroutineScope by lazy {
         CoroutineScope(Dispatchers.Main + SupervisorJob())
     }
@@ -74,7 +75,7 @@ object SystemUIHooker : PackageHooker() {
                 return@doOnAppCreated
             }
             isAppCreated = true
-            YLog.info(TAG, "App created $it")
+            YLog.info(TAG, "App created ")
             onPreLoad()
         }
     }
@@ -118,7 +119,7 @@ object SystemUIHooker : PackageHooker() {
         }
 
         StatusBarViewResolver.subscribe {
-            YLog.info(TAG, "New status bar view resolved $it")
+            YLog.info(TAG, "New status bar view resolved ")
             addStatusBarView(it)
         }
 
@@ -133,15 +134,15 @@ object SystemUIHooker : PackageHooker() {
         val context = appContext ?: return
 
         ScreenStateMonitor.initialize(context)
-        OplusCapsuleHooker.initialize(context.classLoader)
-        MiuiIslandHooker.initialize(context.classLoader)
+        MiuiIslandHooker.initialize(classLoader)
+        OplusCapsuleHooker.initialize(module, classLoader)
         NotificationCoverHelper.initialize()
-        ViewVisibilityTracker.initialize(context.classLoader)
+        ViewVisibilityTracker.initialize(module, classLoader)
         initDataChannel()
 
         initLyriconService()
 
-        StatusBarDisableHooker.inject(context.classLoader)
+        StatusBarDisableHooker.inject(module, classLoader)
         StatusBarDisableHooker.addListener(object :
             StatusBarDisableHooker.OnStatusBarDisableListener {
             private var lastDisableStateChanged: Boolean? = null
@@ -153,25 +154,28 @@ object SystemUIHooker : PackageHooker() {
             }
         })
 
-        ClockColorMonitor.hook()
-        AITranslator.init(context)
+        StatusBarColorMonitor.initialize(module, classLoader)
+        AiTranslator.init(context)
         SystemUIMediaUtils.init(context)
-        StatusBarViewResolver.init(context)
+        StatusBarViewResolver.init(module, context, classLoader)
     }
 
     private fun initLyriconService() {
         val context = appContext ?: return
-        val defaultSp = ModuleEntry.instance.getRemotePreferences(PackageNames.APPLICATION + "_preferences")
+
+        val service = ModuleEntry.instance
+        val defaultSp = service.getRemotePreferences("default")
         val coreServiceDisable = defaultSp.getBoolean("core_service_disable", false)
 
         if (!coreServiceDisable) {
             BridgeCentral.initialize(context)
             BridgeCentral.sendBootCompleted()
         } else {
-            YLog.info(TAG, "已禁用内置核心服务")
+            YLog.info(TAG, "已禁用内置中心服务")
         }
 
         val subscriber = LyriconFactory.createSubscriber(appContext!!)
+        this.subscriber = subscriber
 
         subscriber.subscribeActivePlayer(LyricDataHub)
 
@@ -202,15 +206,9 @@ object SystemUIHooker : PackageHooker() {
     private fun initDataChannel() {
         val context = appContext ?: return
         LyriconBridge.routing(context) {
-            onCommand(AppBridgeConstants.REQUEST_UPDATE_LYRIC_STYLE) {
-                YLog.info(TAG, "App requested lyric style update")
-
-                LyricViewController.applyConfigurationUpdate(LyricPrefs.getLyricStyle())
-            }
-
             onCommand(AppBridgeConstants.REQUEST_HIGHLIGHT_VIEW) {
                 val id = it.getString("id")
-                YLog.info(TAG, "App requested view highlight id: $id")
+                YLog.info(TAG, "App requested view highlight id: ")
 
                 StatusBarViewManager.forEachOnMainThread { it.highlightView(id) }
             }
@@ -225,7 +223,7 @@ object SystemUIHooker : PackageHooker() {
                         .toByteArray(Charsets.UTF_8)
                         .deflate()
 
-                YLog.info(TAG, "View tree reply data: ${data.size}")
+                YLog.info(TAG, "View tree reply data: ")
 
                 reply(Bundle().apply {
                     putByteArray("result", data)
@@ -233,7 +231,7 @@ object SystemUIHooker : PackageHooker() {
             }
 
             onCommand(AppBridgeConstants.REQUEST_CLEAR_TRANSLATION_DB) {
-                AITranslator.clearCache { LyricDataHub.reprocessCurrentSong() }
+                AiTranslator.clearCache { LyricDataHub.reprocessCurrentSong() }
             }
         }
     }
@@ -243,12 +241,13 @@ object SystemUIHooker : PackageHooker() {
      */
     private fun addStatusBarView(view: ViewGroup) {
         view.doOnAttach {
-            val controller = StatusBarViewController(view, LyricPrefs.getLyricStyle())
+            val target = view.rootView as? ViewGroup ?: return@doOnAttach
+            val controller = StatusBarViewController(target, LyricPrefs.getLyricStyle())
             StatusBarViewManager.add(controller)
 
             val isFirst = StatusBarViewManager.controllers.size == 1
             if (isFirst) {
-                if (TEST_CRASH) view.postDelayed({ error("test crash") }, 3000)
+                if (TEST_CRASH) target.postDelayed({ error("test crash") }, 3000)
             }
         }
     }

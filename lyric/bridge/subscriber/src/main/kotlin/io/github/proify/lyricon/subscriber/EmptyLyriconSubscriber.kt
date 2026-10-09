@@ -5,14 +5,15 @@
  */
 
 package io.github.proify.lyricon.subscriber
-class EmptyLyriconSubscriber(
-    override val subscriberInfo: SubscriberInfo
-) : LyriconSubscriber {
-    override fun addConnectionListener(listener: ConnectionListener) {}
-    override fun removeConnectionListener(listener: ConnectionListener) {}
-    override fun subscribeActivePlayer(listener: ActivePlayerListener) = false
-    override fun unsubscribeActivePlayer(listener: ActivePlayerListener) = false
-    override fun register() {}
-    override fun unregister() {}
-    override fun destroy() {}
-}
+
+/**
+ * 已迁移至 [io.github.proify.lyricon.subscriber.internal.EmptyLyriconSubscriber]，仅作兼容保留。
+ */
+@Deprecated(
+    message = "Use io.github.proify.lyricon.subscriber.internal.EmptyLyriconSubscriber instead",
+    replaceWith = ReplaceWith(
+        "EmptyLyriconSubscriber",
+        "io.github.proify.lyricon.subscriber.internal.EmptyLyriconSubscriber"
+    )
+)
+typealias EmptyLyriconSubscriber = io.github.proify.lyricon.subscriber.internal.EmptyLyriconSubscriber

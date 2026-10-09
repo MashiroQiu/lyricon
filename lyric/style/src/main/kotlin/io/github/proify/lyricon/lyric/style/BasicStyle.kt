@@ -11,6 +11,12 @@ import android.os.Parcelable
 import io.github.proify.android.extensions.json
 import io.github.proify.android.extensions.safeDecode
 import io.github.proify.android.extensions.toJson
+import io.github.proify.lyricon.lyric.style.BasicStyle.Companion.STATUS_COLOR_STRATEGY_COMPAT
+import io.github.proify.lyricon.lyric.style.BasicStyle.Companion.STATUS_COLOR_STRATEGY_PRECISE
+import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_AI_TRANSLATION_ENABLED
+import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_AI_TRANSLATION_IGNORE_CHINESE
+import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_AI_TRANSLATION_PROMPT
+import io.github.proify.lyricon.lyric.style.TextStyle.Companion.KEY_AI_TRANSLATION_TARGET_LANGUAGE
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
@@ -25,12 +31,20 @@ import kotlinx.serialization.Transient
 data class BasicStyle(
     var anchor: String = Defaults.ANCHOR,
     var insertionOrder: Int = Defaults.INSERTION_ORDER,
-    var width: Float = Defaults.WIDTH,
-    var widthInColorOSCapsuleMode: Float = Defaults.WIDTH_IN_COLOROS_CAPSULE_MODE,
-    var widthInMiuiIslandMode: Float = Defaults.WIDTH_IN_MIUI_ISLAND_MODE,
-    var dynamicWidthEnabled: Boolean = Defaults.DYNAMIC_WIDTH_ENABLED,
-    var dynamicWidthAutoHideClock: Boolean = Defaults.DYNAMIC_WIDTH_AUTO_HIDE_CLOCK,
-    var xiaomiIslandTempHideEnabled: Boolean = Defaults.XIAOMI_ISLAND_TEMP_HIDE_ENABLED,
+
+    /**
+     * 状态栏文字颜色同步策略 ID(见 [STATUS_COLOR_STRATEGY_PRECISE] /
+     * [STATUS_COLOR_STRATEGY_COMPAT]),由 [StatusBarColorMonitor] 注册的策略动态执行,
+     * 未来可扩展新策略
+     */
+    var statusColorStrategy: Int = Defaults.STATUS_COLOR_STRATEGY,
+
+    private var width: Float = Defaults.WIDTH,
+    private var widthInLand: Float = Defaults.WIDTH_LAND,
+
+    private var widthInColorOSCapsuleMode: Float = Defaults.WIDTH_IN_COLOROS_CAPSULE_MODE,
+    private var widthInColorOSCapsuleModeLand: Float = Defaults.WIDTH_IN_COLOROS_CAPSULE_MODE_LAND,
+
     var margins: RectF = Defaults.MARGINS,
     var paddings: RectF = Defaults.PADDINGS,
     var visibilityRules: List<VisibilityRule> = Defaults.VISIBILITY_RULES,
@@ -41,7 +55,26 @@ data class BasicStyle(
     var keywordHideMatches: List<String> = Defaults.KEYWORD_HIDE_MATCH,
     var blockedWordsRegexString: String = Defaults.BLOCKED_WORDS_REGEX,
     var chineseConversionMode: Int = Defaults.CHINESE_CONVERSION_MODE,
-) : AbstractStyle(), Parcelable {
+
+    var isAiTranslationEnable: Boolean = false,
+    var aiTranslationTargetLanguage: String = TextStyle.Defaults.AI_TRANSLATION_TARGET_LANGUAGE_DISPLAY_NAME,
+    var aiTranslationPrompt: String = TextStyle.Defaults.AI_TRANSLATION_PROMPT,
+    var isAiTranslationAutoIgnoreChinese: Boolean = false,
+
+    ) : AbstractStyle(), Parcelable {
+
+    fun getAutoWidth(isLand: Boolean, isOplusCapsuleShowing: Boolean): Float {
+        if (isOplusCapsuleShowing) return getWidthInColorOSCapsuleMode(isLand)
+        return getWidth(isLand)
+    }
+
+    fun getWidth(isLand: Boolean): Float {
+        return if (isLand) widthInLand else width
+    }
+
+    fun getWidthInColorOSCapsuleMode(isLand: Boolean): Float {
+        return if (isLand) widthInColorOSCapsuleModeLand else widthInColorOSCapsuleMode
+    }
 
     /** 缓存的屏蔽词正则表达式对象 */
     @IgnoredOnParcel
@@ -77,26 +110,21 @@ data class BasicStyle(
             preferences.getString("lyric_style_base_anchor", Defaults.ANCHOR) ?: Defaults.ANCHOR
         insertionOrder =
             preferences.getInt("lyric_style_base_insertion_order", Defaults.INSERTION_ORDER)
+        statusColorStrategy = preferences.getInt(
+            "lyric_style_base_status_color_strategy",
+            Defaults.STATUS_COLOR_STRATEGY
+        )
+
         width = preferences.getFloat("lyric_style_base_width", Defaults.WIDTH)
+        widthInLand =
+            preferences.getFloat("lyric_style_base_width_in_landscape", Defaults.WIDTH_LAND)
         widthInColorOSCapsuleMode = preferences.getFloat(
             "lyric_style_base_width_in_coloros_capsule_mode",
             Defaults.WIDTH_IN_COLOROS_CAPSULE_MODE
         )
-        widthInMiuiIslandMode = preferences.getFloat(
-            "lyric_style_base_width_in_miui_island_mode",
-            Defaults.WIDTH_IN_MIUI_ISLAND_MODE
-        )
-        dynamicWidthEnabled = preferences.getBoolean(
-            "lyric_style_base_dynamic_width_enabled",
-            Defaults.DYNAMIC_WIDTH_ENABLED
-        )
-        dynamicWidthAutoHideClock = preferences.getBoolean(
-            "lyric_style_base_dynamic_width_auto_hide_clock",
-            Defaults.DYNAMIC_WIDTH_AUTO_HIDE_CLOCK
-        )
-        xiaomiIslandTempHideEnabled = preferences.getBoolean(
-            "lyric_style_base_xiaomi_island_temp_hide_enabled",
-            Defaults.XIAOMI_ISLAND_TEMP_HIDE_ENABLED
+        widthInColorOSCapsuleModeLand = preferences.getFloat(
+            "lyric_style_base_width_in_coloros_capsule_mode_in_landscape",
+            Defaults.WIDTH_IN_COLOROS_CAPSULE_MODE_LAND
         )
 
         margins = json.safeDecode<RectF>(
@@ -110,7 +138,7 @@ data class BasicStyle(
         visibilityRules = json.safeDecode<MutableList<VisibilityRule>>(
             preferences.getString(
                 "lyric_style_base_visibility_rules",
-                null
+                Defaults.VISIBILITY_RULES.toJson()
             ), Defaults.VISIBILITY_RULES.toMutableList()
         )
 
@@ -146,23 +174,46 @@ data class BasicStyle(
             "lyric_style_base_chinese_conversion_mode",
             Defaults.CHINESE_CONVERSION_MODE
         )
+
+        isAiTranslationEnable =
+            preferences.getBoolean(
+                KEY_AI_TRANSLATION_ENABLED,
+                TextStyle.Defaults.AI_TRANSLATION_ENABLED
+            )
+        aiTranslationTargetLanguage =
+            preferences.getString(
+                KEY_AI_TRANSLATION_TARGET_LANGUAGE,
+                TextStyle.Defaults.AI_TRANSLATION_TARGET_LANGUAGE_DISPLAY_NAME
+            ) ?: TextStyle.Defaults.AI_TRANSLATION_TARGET_LANGUAGE_DISPLAY_NAME
+        aiTranslationPrompt =
+            preferences.getString(
+                KEY_AI_TRANSLATION_PROMPT,
+                TextStyle.Defaults.AI_TRANSLATION_PROMPT
+            ) ?: TextStyle.Defaults.AI_TRANSLATION_PROMPT
+        isAiTranslationAutoIgnoreChinese =
+            preferences.getBoolean(
+                KEY_AI_TRANSLATION_IGNORE_CHINESE,
+                TextStyle.Defaults.AI_TRANSLATION_IGNORE_CHINESE
+            )
     }
 
     override fun onWrite(editor: SharedPreferences.Editor) {
         editor.putString("lyric_style_base_anchor", anchor)
         editor.putInt("lyric_style_base_insertion_order", insertionOrder)
+        editor.putInt(
+            "lyric_style_base_status_color_strategy",
+            statusColorStrategy
+        )
+
         editor.putFloat("lyric_style_base_width", width)
+        editor.putFloat("lyric_style_base_width_in_landscape", widthInLand)
+
         editor.putFloat("lyric_style_base_width_in_coloros_capsule_mode", widthInColorOSCapsuleMode)
-        editor.putFloat("lyric_style_base_width_in_miui_island_mode", widthInMiuiIslandMode)
-        editor.putBoolean("lyric_style_base_dynamic_width_enabled", dynamicWidthEnabled)
-        editor.putBoolean(
-            "lyric_style_base_dynamic_width_auto_hide_clock",
-            dynamicWidthAutoHideClock
+        editor.putFloat(
+            "lyric_style_base_width_in_coloros_capsule_mode_in_landscape",
+            widthInColorOSCapsuleModeLand
         )
-        editor.putBoolean(
-            "lyric_style_base_xiaomi_island_temp_hide_enabled",
-            xiaomiIslandTempHideEnabled
-        )
+
         editor.putString("lyric_style_base_margins", margins.toJson())
         editor.putString("lyric_style_base_paddings", paddings.toJson())
         editor.putString("lyric_style_base_visibility_rules", visibilityRules.toJson())
@@ -173,19 +224,24 @@ data class BasicStyle(
         editor.putString("lyric_style_base_timeout_hide_keywords", keywordHideMatches.toJson())
         editor.putString("lyric_style_base_blocked_words_regex", blockedWordsRegexString)
 
-        // 写入中文转换配置
         editor.putInt("lyric_style_base_chinese_conversion_mode", chineseConversionMode)
+
+        editor.putBoolean(KEY_AI_TRANSLATION_ENABLED, isAiTranslationEnable)
+        editor.putString(KEY_AI_TRANSLATION_TARGET_LANGUAGE, aiTranslationTargetLanguage)
+        editor.putString(KEY_AI_TRANSLATION_PROMPT, aiTranslationPrompt)
+        editor.putBoolean(KEY_AI_TRANSLATION_IGNORE_CHINESE, isAiTranslationAutoIgnoreChinese)
     }
 
     object Defaults {
         const val ANCHOR: String = "clock"
         const val INSERTION_ORDER: Int = INSERTION_ORDER_BEFORE
+        const val STATUS_COLOR_STRATEGY: Int = STATUS_COLOR_STRATEGY_PRECISE
         const val WIDTH: Float = 100f
+        const val WIDTH_LAND: Float = 200f
+
         const val WIDTH_IN_COLOROS_CAPSULE_MODE: Float = 70f
-        const val WIDTH_IN_MIUI_ISLAND_MODE: Float = 60f
-        const val DYNAMIC_WIDTH_ENABLED: Boolean = false
-        const val DYNAMIC_WIDTH_AUTO_HIDE_CLOCK: Boolean = false
-        const val XIAOMI_ISLAND_TEMP_HIDE_ENABLED: Boolean = true
+        const val WIDTH_IN_COLOROS_CAPSULE_MODE_LAND: Float = 70f
+
         val MARGINS: RectF = RectF()
         val PADDINGS: RectF = RectF()
         val VISIBILITY_RULES: List<VisibilityRule> = listOf(
@@ -204,6 +260,12 @@ data class BasicStyle(
     companion object {
         const val INSERTION_ORDER_BEFORE: Int = 0
         const val INSERTION_ORDER_AFTER: Int = 1
+
+        /** 状态栏文字颜色同步策略:精准模式(按时钟类动态 hook,默认) */
+        const val STATUS_COLOR_STRATEGY_PRECISE: Int = 0
+
+        /** 状态栏文字颜色同步策略:兼容模式(全局 TextView#setTextColor + 聚合) */
+        const val STATUS_COLOR_STRATEGY_COMPAT: Int = 1
 
         /** 中文转换模式：关闭 */
         const val CHINESE_CONVERSION_OFF = 0

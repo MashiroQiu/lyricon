@@ -9,18 +9,17 @@ configure<ApplicationExtension> {
     namespace = rootProject.extra["appPackageName"] as String
 
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
-           /// minorApiLevel = 1
-        }
+        version = release(rootProject.extra.get("compileSdkVersion") as Int)
     }
 
     packaging {
-        resources{
+        resources {
             excludes.addAll(
                 listOf(
-                    "/META-INF/LICENSE*",
-                    "/META-INF/NOTICE*",
-                    "/META-INF/*.txt"
+                    "META-INF/**/LICENSE*",
+                    "META-INF/**/NOTICE*",
+                    "META-INF/*.version",
+                    "DebugProbesKt.bin"
                 )
             )
         }
@@ -38,16 +37,6 @@ configure<ApplicationExtension> {
         versionName = rootProject.extra["appVersionName"] as String
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        androidResources {
-            @Suppress("UnstableApiUsage")
-            localeFilters += listOf(
-                "en",
-                "zh-rCN",
-                "zh-rTW",
-                "zh-rHK"
-            )
-        }
     }
 
     signingConfigs {
@@ -61,7 +50,7 @@ configure<ApplicationExtension> {
 
     buildTypes {
         getByName("debug") {
-            // 使用系统默认 debug 签名
+            signingConfig = signingConfigs.getByName("release")
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
@@ -93,6 +82,7 @@ configure<ApplicationExtension> {
 }
 
 dependencies {
+    compileOnly(libs.libxposed.api)
     implementation(project(":app"))
     implementation(project(":xposed"))
 

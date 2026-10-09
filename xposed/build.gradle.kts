@@ -3,15 +3,13 @@ import com.android.build.api.dsl.LibraryExtension
 
 plugins {
     alias(libs.plugins.android.library)
-    kotlin("plugin.serialization") version "2.1.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 configure<LibraryExtension> {
     namespace = "io.github.proify.lyricon.xposed"
     compileSdk {
-        version = release(rootProject.extra.get("compileSdkVersion") as Int) {
-         //   minorApiLevel = 1
-        }
+        version = release(rootProject.extra.get("compileSdkVersion") as Int)
     }
 
     defaultConfig {
@@ -43,6 +41,7 @@ configure<LibraryExtension> {
 
     buildFeatures {
         buildConfig = true
+        aidl = true
     }
 }
 
@@ -52,13 +51,17 @@ dependencies {
     implementation(project(":lyric:view"))
     implementation(project(":lyric:model"))
     implementation(project(":lyric:style"))
+    implementation(project(":lyric:ai"))
     implementation(project(":lyric:statusbarlyric"))
     implementation(project(":lyric:bridge:central"))
+    implementation(project(":opencc-lite"))
 
-    //implementation(libs.opencc4j)
+    compileOnly(libs.libxposed.api)
+    implementation(libs.libxposed.service)
+
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
-    compileOnly(libs.xposed.api)
+    implementation(libs.okhttp)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

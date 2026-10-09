@@ -1,41 +1,37 @@
-# TTXXXY fork 修复说明
+# TTXXXY fork / API 102 release
 
-基线：TTXXXY/lyricon master，ecd34fcec2a8c7d8233b585a5100d886803d631c。
-包名与原 fork 相同，保留 MiuiIslandHooker 的原目标类、onIslandSizeChanged 回调、横屏处理、时钟切换和岛避让算法。
+本版本以 TTXXXY/lyricon 的 ecd34fcec2a8c7d8233b585a5100d886803d631c 为基础，合并 tomakino/lyricon master 的 c93da0eef8b7aee015d2670b48e9e262fcf72cd1。真实 merge 保留双方历史；分叉点是 c47d0fa005aef2e1b9e194e682631d372c3307be。
 
-## 宽度
+保留 fork 的 MiuiIslandHooker 目标类、onIslandSizeChanged 回调、横屏退出、时钟切换和岛收起后延迟更新位置。将这些行为移植至上游的新歌词渲染、logo、AI 和手势实现。
 
-小米/Redmi/POCO 竖屏且无岛时，不再使用固定配置宽度或 WRAP_CONTENT。
-从歌词当前屏幕坐标到 WindowInsets.displayCutout 中摄像头的左边界计算可用像素宽度，扣除右边距和 4dp 间隔；文本使用 weight 填满剩余容器。
-布局变化时重新计算，因此时钟和锚点位置变化后仍按真实空间限宽。
-无法取得 cutout 时保守退回屏幕中心减 16dp 的位置；此回退不等于真机 cutout 数据。
-ColorOS 和非小米设备保留原配置行为。
+## 几何和默认设置
+
+- 小米/Redmi/POCO 竖屏无岛时，从歌词真实屏幕位置到 displayCutout 摄像头左边缘计算宽度，扣除右边距、4dp 间隔和额外 3 个物理像素。无法获得 cutout 时保守回退到屏幕中心减 16dp 再减 3px。
+- 有岛时沿用 fork 的实际 Rect 和父容器屏幕坐标算法，宽度增加 2 个物理像素；文本始终在剩余宽度内布局。
+- clock 和 notification_icon_area 默认在播放且歌词可见时隐藏。旧设置中的空规则首次升级采用此默认值，已有非空自定义规则保留。
+- 通过 libxposed service 首次连接，将旧私有 baseLyricStyle / packageStyleManager / package_style_* 迁移至上游的 lyricon_style_* 共享偏好组。旧隐藏模式 3 转换为上游的隐藏模式 1，保留已配置的播放器和样式。目标组已有设置优先，成功后写入一次性迁移标记。
+- 保留点击歌词切换时钟，作为新版手势的默认单击动作；设置页可改为上游控制面板或其他动作。
 
 ## 翻译
 
-两个歌词渲染路径都优先选择 translation/translationWords，再回退 secondary，最后依据罗马音开关选择 roma。
-这修复 SuperLyric 的 secondary（网易云罗马音）遮盖真正翻译的问题。
-输入源必须正确标记字段：当前 SuperLyric 的网易云解析器在完全没有翻译时可能把 roma 填入 translation；Lyricon 无法可靠从文字本身判断这种错误，不能凭脚本语言把英语翻译一律丢弃。
+新渲染器 LyricLineAssembler 优先选择 translation/translationWords，再回退 secondary，最后依据开关选择 roma。SuperLyric 的网易云 secondary 罗马音不再抢占真正的翻译。
+
+如果输入源在没有翻译时将罗马音误标记为 translation，Lyricon 无法从字符串本身可靠识别；这仍需提供端正确标记字段。
 
 ## LSPosed API 102
 
-依据 Maven Central 发布的 io.github.libxposed:api:102.0.0 源码 Javadoc：
-https://repo.maven.apache.org/maven2/io/github/libxposed/api/102.0.0/api-102.0.0-sources.jar
+采用 io.github.libxposed:api:102.0.0。minApiVersion/targetApiVersion 均为 102，以 onPackageReady 的最终 classLoader 安装 hook，使用 hook(Method).intercept/Chain.proceed。不包含 legacy xposed_init 或 xposedsharedprefs 元数据。
 
-- 使用 XposedModule/onModuleLoaded/onPackageReady。onPackageReady 提供 AppComponentFactory 确定的最终 classLoader。
-- 使用 hook(Method).intercept 和 Chain.proceed(args)，保留原回调行为；方法异常原样传播，观察回调失败不能影响 SystemUI。
-- 删除 legacy assets/xposed_init、旧入口类和 xposedsharedprefs 清单标记。
-- META-INF/xposed/module.prop 的 min/target 都为 102。
-- 用 getRemotePreferences 读设置；应用通过 libxposed service 101.0.0（独立版本的服务库）写共享副本，不再依赖 world-readable XML。
-- 保留本地私有设置、备份和原文件名；首次启动应用迁移并同步。设置变更继续实时同步。
+API 文档：https://repo.maven.apache.org/maven2/io/github/libxposed/api/102.0.0/api-102.0.0-sources.jar
 
-## 真机验证
+应用使用上游的 libxposed service 偏好接口；不依赖可被其他应用读取的私有 XML。最终 application 模块 compileOnly API，使 R8 正确将宿主 API 识别为库类型。
 
-测试签名与原 fork 正式签名不同，签名冲突时先备份配置再卸载；安装后恢复配置、打开应用让设置同步，LSPosed 勾选 SystemUI，重启。
-测试：无岛长歌词到摄像头左边界、有岛限宽、岛消失恢复、时钟切换、横竖屏、网易云同时含原文/翻译/罗马音歌曲，以及设置修改后的实时同步。
-本环境没有连接小米设备，编译和静态/单元验证不能替代真机确认。
+## 构建与验证
 
-## 干净检出构建一致性
+版本：54 / 1.0.40.rc-xy21-api102；上游最低 Android 10（API 29）。assembleRelease 使用代码和资源缩减，不可调试。保留用户已验证测试 APK 的签名，使其能覆盖更新；它不是 TTXXXY 或 tomakino 的官方签名。不要上传签名私钥。
 
-当前 master 混合了旧的运行实现与未被引用的新实现。编译时修正 ViewVisibilityPolicy 的旧视图 API 名称、SubscriberRemoteEndpoint 的命名参数；将未被运行路径引用且缺失依赖的新 logo、背景和 AI 翻译实现原样归档到 archive/unreferenced-upstream。实际使用的 SuperLogo、AITranslator 和设置页仍保留。
-移除 JDK 21 不支持的 CMSClassUnloadingEnabled 构建参数。测试 APK 使用标准 debug 签名。
+检查翻译选择单元测试、CameraWidth 的 5 个固定用例和 10000 个边界用例、release 签名与元数据。没有连接小米设备，合并后的 SystemUI 运行行为仍需真机验证。
+
+安装后打开一次应用以迁移设置，确认 LSPosed 作用域为 SystemUI，再重启。重点验证：有岛/无岛长歌词边界、岛收起后恢复、歌词和时钟切换、横竖屏、网易云原文和翻译、设置保存与重新启动。
+
+旧 fork 中原先未引用的源码保留在 archive/unreferenced-upstream；新版实际运行对应的上游实现。

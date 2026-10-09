@@ -7,6 +7,8 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.annotation.SuppressLint
+import io.github.proify.lyricon.lyric.style.VisibilityRule
+import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -17,18 +19,23 @@ import androidx.core.graphics.toColorInt
 import androidx.core.view.doOnAttach
 import androidx.core.view.isVisible
 import io.github.proify.android.extensions.dp
+import io.github.proify.android.extensions.isLandScape
 import io.github.proify.android.extensions.setColorAlpha
 import io.github.proify.android.extensions.toBitmap
+import io.github.proify.lyricon.app.bridge.AppBridge.LyricGesturePrefs
 import io.github.proify.lyricon.colorextractor.palette.ColorExtractor
 import io.github.proify.lyricon.colorextractor.palette.ColorPaletteResult
 import io.github.proify.lyricon.common.util.ResourceMapper
 import io.github.proify.lyricon.common.util.ScreenStateMonitor
 import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
-import io.github.proify.lyricon.lyric.style.VisibilityRule
 import io.github.proify.lyricon.statusbarlyric.StatusBarLyric
 import io.github.proify.lyricon.xposed.logger.YLog
-import io.github.proify.lyricon.xposed.systemui.hook.ClockColorMonitor
+import io.github.proify.lyricon.xposed.systemui.hook.ClockViewFinder
+import io.github.proify.lyricon.xposed.systemui.hook.OplusCapsuleHooker
+import io.github.proify.lyricon.xposed.systemui.hook.StatusBarColorMonitor
+import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController.isPlaying
+import io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup
 import io.github.proify.lyricon.xposed.systemui.util.OnColorChangeListener
 import io.github.proify.lyricon.xposed.systemui.util.ViewVisibilityController
 import java.io.File
@@ -46,30 +53,45 @@ class StatusBarViewController(
     }
 
     val context: Context = statusBarView.context.applicationContext
-    val visibilityController = ViewVisibilityController(statusBarView)
+    val visibilityController: ViewVisibilityController = ViewVisibilityController(statusBarView)
     val lyricView: StatusBarLyric by lazy { createLyricView(currentLyricStyle) }
 
-    private val clockId: Int by lazy { ResourceMapper.getIdByName(context, "clock") }
+    // --- 手势控制状态 (随偏好热更新) ---
+    private var gestureEnabled: Boolean = LyricGesturePrefs.DEFAULT_ENABLED
+    private var swipeLeftAction: Int = LyricGesturePrefs.DEFAULT_SWIPE_LEFT
+    private var swipeRightAction: Int = LyricGesturePrefs.DEFAULT_SWIPE_RIGHT
+    private var tapAction: Int = LyricGesturePrefs.DEFAULT_TAP
+    private var longPressAction: Int = LyricGesturePrefs.DEFAULT_LONG_PRESS
+
+    var isMiuiIslandShowing = MiuiIslandHooker.isShowing
+    var userShowClock = false
+        private set
+    internal var pendingLocationUpdate = false
+
     private var lastAnchor = ""
     private var lastInsertionOrder = -1
     private var internalRemoveLyricViewFlag = false
-    /** 超级岛展开期间屏蔽重注入，防止时钟被顶出 */
-    var isMiuiIslandShowing = false
-    /**
-     * 用户主动切换到时钟模式（双击/单击歌词后）。
-     * 对应 1.0.32 的 userShowClock，控制 applyVisibilityRulesNow 是否应用时钟隐藏规则。
-     */
-    var userShowClock = false
-        private set
-    /** 岛展开期间有位置更新被推迟，岛收起后需补执行 */
-    internal var pendingLocationUpdate = false
     private var lastHighlightView: View? = null
     private var colorMonitorView: View? = null
     private var coverColorPaletteResult: ColorPaletteResult? = null
     private var systemStatusBarColor: SystemStatusBarColor? = null
 
+    private val colorChangeListener = object : OnColorChangeListener {
+
+        private var colorFingerprint: String? = null
+        override fun onColorChanged(color: Int, darkIntensity: Float) {
+            val colorFingerprint = color.toString() + darkIntensity
+            if (colorFingerprint == this.colorFingerprint) return
+            this.colorFingerprint = colorFingerprint
+
+            updateStatusColor(SystemStatusBarColor(color, darkIntensity))
+        }
+    }
+
     private val onGlobalLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
         applyVisibilityRulesNow()
+//        // 无副作用复核:布局事件也是状态栏颜色可能的变更时机(补救观察点)
+//        StatusBarColorMonitor.refresh()
     }
 
     // --- 生命周期与初始化 ---
@@ -80,25 +102,17 @@ class StatusBarViewController(
         ScreenStateMonitor.addListener(this)
         lyricView.onPlayingChanged = { _ -> }
 
-        val onColorChangeListener = object : OnColorChangeListener {
+        // 手势控制:读取偏好并绑定回调,手势动作可配置
+        lyricView.setMiuiIslandRect(MiuiIslandHooker.currentRect)
+        refreshGestureConfig()
+        lyricView.gestureListener = { gesture -> onLyricGesture(gesture) }
 
-            private var colorFingerprint: String? = null
-            override fun onColorChanged(color: Int, darkIntensity: Float) {
-                val colorFingerprint = color.toString() + darkIntensity
-                if (colorFingerprint == this.colorFingerprint) return
-                this.colorFingerprint = colorFingerprint
-
-                updateStatusColor(SystemStatusBarColor(color, darkIntensity))
-            }
-        }
-
-        colorMonitorView = getClockView()?.also {
-            ClockColorMonitor.setListener(it, onColorChangeListener)
-        }
+        StatusBarColorMonitor.bindStatusBar(statusBarView)
+        colorMonitorView = getClockView()
+        StatusBarColorMonitor.bindClockView(colorMonitorView)
+        StatusBarColorMonitor.addListener(colorChangeListener)
 
         statusBarView.doOnAttach { checkLyricViewExists() }
-        // 歌词区点击监听常驻注册：无论超级岛是否存在，用户随时可点击歌词切换到时钟
-        lyricView.setOnClickListener { LyricViewController.onLyricClickedPublic(this) }
         YLog.info(tag = TAG, "Lyric view created for $statusBarView")
     }
 
@@ -108,7 +122,13 @@ class StatusBarViewController(
         lyricView.removeOnAttachStateChangeListener(lyricAttachListener)
         ScreenStateMonitor.removeListener(this)
         lyricView.onPlayingChanged = null
-        colorMonitorView?.let { ClockColorMonitor.setListener(it, null) }
+        getClockView()?.setOnClickListener(null)
+        lyricView.gestureListener = null
+        lyricView.setOnClickListener(null)
+        LyricControlPopup.dismissIfOwnedBy(lyricView)
+        StatusBarColorMonitor.removeListener(colorChangeListener)
+        colorMonitorView?.let { StatusBarColorMonitor.unbindClockView(it) }
+        colorMonitorView = null
         YLog.info(tag = TAG, "Lyric view destroyed for $statusBarView")
     }
 
@@ -117,7 +137,7 @@ class StatusBarViewController(
     /**
      * 更新状态栏颜色，内部决定最终颜色
      */
-    private fun updateStatusColor(systemStatusBarColor: SystemStatusBarColor) {
+    internal fun updateStatusColor(systemStatusBarColor: SystemStatusBarColor) {
         this.systemStatusBarColor = systemStatusBarColor
 
         val textStyle = currentLyricStyle.packageStyle.text
@@ -182,6 +202,7 @@ class StatusBarViewController(
             updateLocation(basicStyle)
         }
         lyricView.updateStyle(lyricStyle)
+        refreshGestureConfig()
 
         systemStatusBarColor?.let { updateStatusColor(it) }
     }
@@ -190,7 +211,11 @@ class StatusBarViewController(
         coverColorPaletteResult = null
         try {
             val bitmap = coverFile?.toBitmap() ?: return
-            ColorExtractor.extractAsync(bitmap) {
+            ColorExtractor.extractAsync(
+                bitmap = bitmap,
+                cacheKey = {
+                    coverFile.name
+                }) {
                 coverColorPaletteResult = it
                 systemStatusBarColor?.let { updateStatusColor(it) }
                 bitmap.recycle()
@@ -204,15 +229,11 @@ class StatusBarViewController(
      * 处理视图注入逻辑：根据 BasicStyle 寻找锚点并插入歌词视图
      */
     private fun updateLocation(baseStyle: BasicStyle) {
-        // 超级岛展开时父容器有额外 View，anchorIndex 会偏移导致时钟被顶出
-        // 推迟到岛收起后再执行
-        if (isMiuiIslandShowing) {
-            YLog.info(TAG, "updateLocation deferred: MiuiIsland is showing")
+        if (isMiuiIslandShowing && lyricView.isAttachedToWindow) {
             pendingLocationUpdate = true
             return
         }
         pendingLocationUpdate = false
-
         val anchor = baseStyle.anchor
         val anchorId = context.resources.getIdentifier(anchor, "id", context.packageName)
         val anchorView = statusBarView.findViewById<View>(anchorId) ?: return run {
@@ -229,14 +250,20 @@ class StatusBarViewController(
         (lyricView.parent as? ViewGroup)?.removeView(lyricView)
 
         val anchorIndex = anchorParent.indexOfChild(anchorView)
-        val lp = lyricView.layoutParams ?: ViewGroup.LayoutParams(
-            if (baseStyle.dynamicWidthEnabled) ViewGroup.LayoutParams.WRAP_CONTENT else baseStyle.width.dp,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
+
+        val lp = lyricView.layoutParams ?: run {
+            val width = baseStyle.getAutoWidth(
+                context.isLandScape(),
+                isOplusCapsuleShowing = OplusCapsuleHooker.isShowing
+            ).dp
+
+            ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
 
         // 执行插入：在前或在后
         val targetIndex =
-            if (baseStyle.insertionOrder == BasicStyle.INSERTION_ORDER_AFTER) anchorIndex + 1 else anchorIndex
+            if (baseStyle.insertionOrder == BasicStyle.INSERTION_ORDER_AFTER) anchorIndex + 1
+            else anchorIndex
         anchorParent.addView(lyricView, targetIndex, lp)
 
         lyricView.updateVisibility()
@@ -249,9 +276,7 @@ class StatusBarViewController(
 
     fun checkLyricViewExists() {
         if (lyricView.isAttachedToWindow) return
-        // 岛展开时父容器布局不稳定，推迟到岛收起后再重注入
         if (isMiuiIslandShowing) {
-            YLog.info(TAG, "checkLyricViewExists deferred: MiuiIsland is showing")
             pendingLocationUpdate = true
             return
         }
@@ -262,17 +287,21 @@ class StatusBarViewController(
 
     // --- 辅助方法 ---
 
-    private fun getClockView(): View? = statusBarView.findViewById(clockId)
+    private fun getClockView(): View? = ClockViewFinder.find(statusBarView)
 
-    /**
-     * 设置用户主动切换到时钟的状态，对应 1.0.32 的 setUserShowClock()。
-     * show=true：隐藏歌词，恢复时钟；show=false：恢复歌词，重新隐藏时钟（若岛在）。
-     */
     fun setUserShowClock(show: Boolean) {
         if (userShowClock == show) return
         userShowClock = show
         lyricView.setUserHideLyric(show)
         applyVisibilityRulesNow()
+    }
+
+    fun computeShouldApplyPlayingRules(): Boolean {
+        return !userShowClock && isPlaying && when {
+            lyricView.isDisabledVisible -> !lyricView.isHideOnLockScreen()
+            lyricView.isVisible -> true
+            else -> false
+        }
     }
 
     private fun applyVisibilityRulesNow() {
@@ -317,6 +346,69 @@ class StatusBarViewController(
 
     private fun createLyricView(style: LyricStyle) =
         StatusBarLyric(context, style, getClockView() as? TextView)
+
+    // --- 手势控制 ---
+
+    /**
+     * 从偏好刷新手势配置,并同步视图的手势开关与点击行为。
+     *
+     * 手势关闭时保留旧版"单击打开控制面板"的行为(通过点击监听器委托)。
+     */
+    private fun refreshGestureConfig() {
+        gestureEnabled = LyricPrefs.gestureEnabled
+        swipeLeftAction = LyricPrefs.gestureAction(
+            LyricGesturePrefs.KEY_SWIPE_LEFT,
+            LyricGesturePrefs.DEFAULT_SWIPE_LEFT
+        )
+        swipeRightAction = LyricPrefs.gestureAction(
+            LyricGesturePrefs.KEY_SWIPE_RIGHT,
+            LyricGesturePrefs.DEFAULT_SWIPE_RIGHT
+        )
+        tapAction = LyricPrefs.gestureAction(
+            LyricGesturePrefs.KEY_TAP,
+            LyricGesturePrefs.DEFAULT_TAP
+        )
+        longPressAction = LyricPrefs.gestureAction(
+            LyricGesturePrefs.KEY_LONG_PRESS,
+            LyricGesturePrefs.DEFAULT_LONG_PRESS
+        )
+
+        lyricView.gestureEnabled = gestureEnabled
+        lyricView.hapticEnabled = LyricPrefs.gestureHapticEnabled
+        if (gestureEnabled) {
+            lyricView.setOnClickListener(null)
+        } else {
+            lyricView.setOnClickListener { v ->
+                LyricViewController.onLyricClickedPublic(this)
+            }
+        }
+        // setOnClickListener(null) 会关闭 clickable,这里恢复以保持手势模式下的点击语义(无障碍)
+        lyricView.isClickable = true
+    }
+
+    /**
+     * 手势回调入口:根据当前配置将手势映射为动作并执行
+     */
+    private fun onLyricGesture(gesture: StatusBarLyric.GestureType) {
+        if (!gestureEnabled) return
+
+        val action = when (gesture) {
+            StatusBarLyric.GestureType.SWIPE_LEFT -> swipeLeftAction
+            StatusBarLyric.GestureType.SWIPE_RIGHT -> swipeRightAction
+            StatusBarLyric.GestureType.TAP -> tapAction
+            StatusBarLyric.GestureType.LONG_PRESS -> longPressAction
+        }
+
+        when (action) {
+            LyricGesturePrefs.ACTION_SHOW_CLOCK -> LyricViewController.onLyricClickedPublic(this)
+            LyricGesturePrefs.ACTION_NONE -> Unit
+            LyricGesturePrefs.ACTION_TOGGLE_PLAY -> PlaybackControl.togglePlay()
+            LyricGesturePrefs.ACTION_PREVIOUS -> PlaybackControl.previous()
+            LyricGesturePrefs.ACTION_NEXT -> PlaybackControl.next()
+            LyricGesturePrefs.ACTION_OPEN_CONTROL -> LyricControlPopup.show(lyricView)
+            else -> YLog.warning(TAG, "Unknown gesture action: $action")
+        }
+    }
 
     fun highlightView(idName: String?) {
         YLog.info(TAG, "Highlighting view id:$idName")
@@ -375,7 +467,8 @@ class StatusBarViewController(
     }
 
     override fun equals(other: Any?): Boolean =
-        (this === other) || (other is StatusBarViewController && statusBarView == other.statusBarView)
+        (this === other) ||
+                (other is StatusBarViewController && statusBarView == other.statusBarView)
 
     override fun hashCode(): Int = 31 * 17 + statusBarView.hashCode()
 

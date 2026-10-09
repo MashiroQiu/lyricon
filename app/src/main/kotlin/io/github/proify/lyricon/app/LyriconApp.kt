@@ -5,20 +5,17 @@
  */
 package io.github.proify.lyricon.app
 
-import io.github.libxposed.service.XposedService
-import io.github.libxposed.service.XposedServiceHelper
-import io.github.proify.lyricon.app.bridge.AppBridge
-import io.github.proify.android.extensions.json
-import io.github.proify.lyricon.lyric.style.BasicStyle
-import kotlinx.serialization.encodeToString
-import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageInfo
+import android.util.Log
 import androidx.core.content.pm.PackageInfoCompat
+import io.github.libxposed.service.XposedService
+import io.github.libxposed.service.XposedServiceHelper
 import io.github.proify.lyricon.app.util.AppLangUtils
 import io.github.proify.lyricon.common.util.safe
+import java.util.concurrent.CopyOnWriteArraySet
 
 class LyriconApp : Application() {
 
@@ -26,54 +23,62 @@ class LyriconApp : Application() {
         instance = this
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        Log.i(TAG, "LyriconApp created")
+
+        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
+            override fun onServiceBind(service: XposedService) {
+                Log.i(TAG, "XposedService bind")
+                runCatching { ForkPreferenceMigration.migrate(this@LyriconApp, service) }
+                    .onFailure { Log.e(TAG, "Fork settings migration failed; will retry on next bind", it) }
+                xposedService = service
+                xposedServiceStateListeners.forEach {
+                    it.onServiceStateChanged(service)
+                }
+            }
+
+            override fun onServiceDied(service: XposedService) {
+                Log.i(TAG, "XposedService died")
+                xposedService = null
+                xposedServiceStateListeners.forEach {
+                    it.onServiceStateChanged(null)
+                }
+            }
+        })
+    }
+
     override fun attachBaseContext(base: Context) {
         AppLangUtils.setDefaultLocale(base)
         super.attachBaseContext(AppLangUtils.wrapContext(base))
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        val stylePrefs = getSharedPreferences(AppBridge.LyricStylePrefs.PREF_NAME_BASE_STYLE, MODE_PRIVATE)
-        val migrationKey = "xy21_default_hidden_views_v1"
-        if (!stylePrefs.getBoolean(migrationKey, false)) {
-            val rulesKey = "lyric_style_base_visibility_rules"
-            val saved = stylePrefs.getString(rulesKey, null)?.filterNot { it.isWhitespace() }
-            val editor = stylePrefs.edit().putBoolean(migrationKey, true)
-            // Adopt the new defaults once; keep existing custom controller rules.
-            if (saved == null || saved == "[]") {
-                editor.putString(rulesKey, json.encodeToString(BasicStyle.Defaults.VISIBILITY_RULES))
-            }
-            editor.apply()
-        }
-        // Reuse the existing config and back up files; no world-readable filesystem access.
-        dataDir.resolve("shared_prefs").listFiles()?.filter { it.extension == "xml" }?.forEach {
-            getSharedPreferences(it.nameWithoutExtension, MODE_PRIVATE)
-        }
-        getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
-        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
-            override fun onServiceBind(service: XposedService) {
-                AppBridge.moduleActive = true
-                RemotePreferenceSync.bind(service)
-            }
-            override fun onServiceDied(service: XposedService) {
-                AppBridge.moduleActive = false
-                RemotePreferenceSync.bind(null)
-            }
-        })
-    }
-
-    override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
-        val prefs = super.getSharedPreferences(name, MODE_PRIVATE)
-        if (name != null) RemotePreferenceSync.track(name, prefs)
-        return prefs.safe()
-    }
+    override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences =
+        super.getSharedPreferences(name, mode).safe()
 
     companion object {
         const val TAG: String = "LyriconApp"
+        private val xposedServiceStateListeners = CopyOnWriteArraySet<XposedServiceStateListener>()
 
-        @SuppressLint("StaticFieldLeak")
         lateinit var instance: LyriconApp
             private set
+
+        var xposedService: XposedService? = null
+            private set
+
+        fun addXposedServiceStateListener(
+            listener: XposedServiceStateListener,
+            notifyImmediately: Boolean = true
+        ) {
+            xposedServiceStateListeners.add(listener)
+            if (notifyImmediately && xposedService != null) {
+                listener.onServiceStateChanged(xposedService)
+            }
+        }
+
+        fun removeXposedServiceStateListener(listener: XposedServiceStateListener) {
+            xposedServiceStateListeners.remove(listener)
+        }
 
         fun get(): LyriconApp = instance
 
@@ -82,14 +87,18 @@ class LyriconApp : Application() {
                 instance.packageName, 0
             )
         }
+
         val versionCode: Long by lazy { PackageInfoCompat.getLongVersionCode(packageInfo) }
 
-        private var _safeMode: Boolean = false
+        var isSafeMode: Boolean = false
+            private set
 
-        val safeMode: Boolean get() = _safeMode
-
-        fun updateSafeMode(safeMode: Boolean) {
-            _safeMode = safeMode
+        fun setSafeMode(safeMode: Boolean) {
+            this.isSafeMode = safeMode
         }
+    }
+
+    interface XposedServiceStateListener {
+        fun onServiceStateChanged(service: XposedService?)
     }
 }

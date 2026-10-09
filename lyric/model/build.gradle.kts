@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.jvm)
     signing
     id("com.vanniktech.maven.publish")
-    kotlin("plugin.serialization") version "2.1.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 java {
@@ -64,4 +64,26 @@ afterEvaluate {
     signing {
         useGpgCmd()
     }
+}
+
+// ==== 性能跑分任务: gradlew :lyric:model:benchmark ====
+tasks.register<JavaExec>("benchmark") {
+    group = "benchmark"
+    description = "运行 TimingNavigator 性能跑分, 输出 benchmark/results.json"
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.benchmark.TimingBenchmarkReportKt")
+    workingDir = rootProject.projectDir
+    jvmArgs("-Xms512m", "-Xmx2g", "-XX:+UseParallelGC", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8")
+}
+
+tasks.register<JavaExec>("regenReport") {
+    group = "benchmark"
+    description = "仅重新生成跑分网页(读取已有 results.json, 不重新测量)"
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.benchmark.TimingBenchmarkReportKt")
+    args("--regen")
+    workingDir = rootProject.projectDir
+    jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8")
 }

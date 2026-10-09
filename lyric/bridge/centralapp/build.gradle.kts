@@ -1,6 +1,6 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.application)
-    kotlin("plugin.serialization") version "2.1.21"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {

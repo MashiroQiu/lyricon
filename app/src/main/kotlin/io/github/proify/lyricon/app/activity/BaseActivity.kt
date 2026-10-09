@@ -15,6 +15,7 @@ import io.github.proify.lyricon.app.util.AppLangUtils
 import io.github.proify.lyricon.common.util.safe
 
 open class BaseActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -26,4 +27,5 @@ open class BaseActivity : ComponentActivity() {
 
     override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences =
         super.getSharedPreferences(name, mode).safe()
+
 }

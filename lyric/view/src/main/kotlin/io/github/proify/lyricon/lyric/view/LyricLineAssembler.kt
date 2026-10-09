@@ -63,7 +63,6 @@ internal class LyricLineAssembler(
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
                 }
-
                 !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
                     text = source.secondary
                     words = wordBuilder.build(source, source.secondary, source.secondaryWords)

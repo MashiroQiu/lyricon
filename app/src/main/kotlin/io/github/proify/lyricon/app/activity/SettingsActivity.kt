@@ -35,14 +35,13 @@ import io.github.proify.lyricon.app.util.AppLangUtils
 import io.github.proify.lyricon.app.util.AppThemeUtils
 import io.github.proify.lyricon.app.util.EventBus
 import io.github.proify.lyricon.app.util.resolveLanguageName
-import io.github.proify.lyricon.app.util.updateRemoteLyricStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.SpinnerEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
@@ -83,7 +82,6 @@ class SettingsActivity : BaseActivity() {
             task()
             withContext(Dispatchers.Main) {
                 EventBus.post(SettingChangedEvent)
-                updateRemoteLyricStyle()
             }
         }
     }
@@ -153,8 +151,8 @@ class SettingsActivity : BaseActivity() {
         SwitchPreference(
             checked = enable,
             startAction = { IconActions(painterResource(R.drawable.ic_core_bear)) },
-            title = stringResource(R.string.item_core_service_disable),
-            summary = stringResource(R.string.item_core_service_disable_summary),
+            title = stringResource(R.string.item_disable_builtin_services),
+            summary = stringResource(R.string.item_summary_disable_builtin_services),
             onCheckedChange = {
                 enable = it
             }
@@ -260,7 +258,7 @@ class SettingsActivity : BaseActivity() {
                 val primaryName = context.resolveLanguageName(code)
                 val fallbackName =
                     context.resolveLanguageName(code, AppLangUtils.DEFAULT_LOCALE)
-                SpinnerEntry(
+                DropdownItem(
                     title = primaryName,
                     summary = if (primaryName == fallbackName) null else fallbackName
                 )
