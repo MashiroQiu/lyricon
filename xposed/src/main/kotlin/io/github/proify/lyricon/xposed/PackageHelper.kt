@@ -7,9 +7,9 @@
 package io.github.proify.lyricon.xposed
 
 import android.app.Application
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
+import io.github.libxposed.api.XposedModuleInterface
 import io.github.proify.lyricon.xposed.logger.YLog
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,11 +19,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 支持根据 AndroidManifest 中定义的 Application 真实类名进行精准 Hook
  */
 class PackageHelper(
-    private val param: XC_LoadPackage.LoadPackageParam
+    private val param: XposedModuleInterface.PackageReadyParam
 ) {
     val classLoader: ClassLoader get() = param.classLoader
     val packageName: String get() = param.packageName
-    val processName: String get() = param.processName
+    val processName: String get() = ModuleEntry.processName
 
     @Volatile
     var appInstance: Application? = null
@@ -54,17 +54,17 @@ class PackageHelper(
      */
     private fun findAndHookTargetApplication() {
         // 1. 获取清单文件中定义的类名，若未定义则默认为系统的 Application 类
-        val targetClassName = param.appInfo.className ?: "android.app.Application"
+        val targetClassName = param.applicationInfo.className ?: "android.app.Application"
 
         try {
             YLog.info("PackageHelper", "Targeting Application class: $targetClassName")
 
             // 2. 直接对该类进行 Hook
-            XposedHelpers.findAndHookMethod(
+            HookMethods.findAndHookMethod(
                 targetClassName,
                 classLoader,
                 "onCreate",
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     /**
                      * 当 targetClassName 的 onCreate 执行时，Context 环境已完全就绪
                      */
@@ -86,10 +86,10 @@ class PackageHelper(
      */
     private fun fallbackToGlobalHook() {
         try {
-            XposedHelpers.findAndHookMethod(
+            HookMethods.findAndHookMethod(
                 Application::class.java,
                 "onCreate",
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         handleApplicationInstance(param.thisObject as Application)
                     }

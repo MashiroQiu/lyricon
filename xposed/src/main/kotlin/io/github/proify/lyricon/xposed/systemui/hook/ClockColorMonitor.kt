@@ -11,8 +11,8 @@ import android.content.res.ColorStateList
 import android.view.View
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import io.github.proify.lyricon.xposed.systemui.util.OnColorChangeListener
 import java.lang.reflect.Member
 import java.util.WeakHashMap
@@ -55,7 +55,7 @@ object ClockColorMonitor {
             )
         )
 
-        val hook = object : XC_MethodHook() {
+        val hook = object : MethodCallback() {
 
             @SuppressLint("DiscouragedApi")
             override fun afterHookedMethod(param: MethodHookParam) {
@@ -83,6 +83,6 @@ object ClockColorMonitor {
             }
         }
 
-        methods.forEach { XposedBridge.hookMethod(it, hook) }
+        methods.forEach { HookMethods.hookMethod(it, hook) }
     }
 }

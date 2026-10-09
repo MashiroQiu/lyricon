@@ -8,8 +8,8 @@
 
 package io.github.proify.lyricon.xposed.systemui.hook
 
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import io.github.proify.lyricon.xposed.logger.YLog
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -43,7 +43,7 @@ object StatusBarDisableHooker {
 
     fun inject(appClassLoader: ClassLoader) {
         try {
-            XposedHelpers.findAndHookMethod(
+            HookMethods.findAndHookMethod(
                 "com.android.systemui.statusbar.phone.fragment.CollapsedStatusBarFragment",
                 appClassLoader,
                 "disable",
@@ -51,7 +51,7 @@ object StatusBarDisableHooker {
                 Int::class.javaPrimitiveType, // state1
                 Int::class.javaPrimitiveType, // state2
                 Boolean::class.javaPrimitiveType, // animate
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val state1 = param.args[1] as Int
                         val animate = param.args[3] as Boolean

@@ -7,8 +7,8 @@
 package io.github.proify.lyricon.xposed.systemui.hook
 
 import android.graphics.Rect
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import io.github.proify.lyricon.xposed.logger.YLog
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -48,7 +48,7 @@ object MiuiIslandHooker {
     @Volatile
     var isLandscape: Boolean = false
 
-    private var unhook: XC_MethodHook.Unhook? = null
+    private var unhook: io.github.libxposed.api.XposedInterface.HookHandle? = null
 
     /**
      * 检测当前 ClassLoader 是否含有小米超级岛目标类。
@@ -75,12 +75,12 @@ object MiuiIslandHooker {
         }
 
         try {
-            unhook = XposedHelpers.findAndHookMethod(
+            unhook = HookMethods.findAndHookMethod(
                 classLoader.loadClass(STATE_LISTENER_CLASS),
                 "onIslandSizeChanged",
                 Rect::class.java,
                 Boolean::class.javaPrimitiveType,
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val rect = param.args[0] as? Rect ?: return
                         val isEmpty = rect.left == 0 && rect.right == 0

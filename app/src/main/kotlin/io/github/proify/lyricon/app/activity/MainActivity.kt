@@ -52,6 +52,9 @@ import io.github.proify.lyricon.app.R
 import io.github.proify.lyricon.app.activity.lyric.BasicLyricStyleActivity
 import io.github.proify.lyricon.app.activity.lyric.pkg.PackageStyleActivity
 import io.github.proify.lyricon.app.activity.lyric.provider.LyricProviderActivity
+import io.github.proify.lyricon.app.RemotePreferenceSync
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import io.github.proify.lyricon.app.bridge.AppBridge
 import io.github.proify.lyricon.app.bridge.AppBridgeConstants
 import io.github.proify.lyricon.app.bridge.LyriconBridge
@@ -310,7 +313,8 @@ class MainActivity : BaseActivity() {
             )
         }
 
-        if (AppBridge.isModuleActive()) {
+        val moduleActive by RemotePreferenceSync.active.collectAsState()
+        if (moduleActive) {
             if (isWaitingForReboot) {
                 return StatusCard(
                     colors = CardColors(MaterialPalette.Orange.Primary, White),

@@ -255,17 +255,7 @@ class RichLyricLineView(
             isAlignedRight = source.isAlignedRight
 
             when {
-                // 1. 优先展示副行歌词
-                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
-                    text = source.secondary
-                    words = calculateRelativeProgressWords(
-                        source,
-                        source.secondary,
-                        source.secondaryWords
-                    )
-                    isGenerated = words !== source.secondaryWords
-                }
-                // 2. 其次展示翻译
+                // 优先显示真正的翻译；SuperLyric 的 secondary 可能是罗马音。
                 displayTranslation && (!source.translation.isNullOrBlank() || !source.translationWords.isNullOrEmpty()) -> {
                     text = source.translation
                     words = calculateRelativeProgressWords(
@@ -277,6 +267,17 @@ class RichLyricLineView(
                     isGenerated = words !== source.translationWords
                 }
 
+
+                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
+                    text = source.secondary
+                    words = calculateRelativeProgressWords(
+                        source,
+                        source.secondary,
+                        source.secondaryWords
+                    )
+                    isGenerated = words !== source.secondaryWords
+                }
+                // 仅在没有翻译或副行时，按设置显示独立罗马音。
                 displayRoma -> {
                     text = source.roma
                     words = calculateRelativeProgressWords(

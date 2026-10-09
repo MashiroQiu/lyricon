@@ -12,19 +12,12 @@ import android.content.SharedPreferences
 import io.github.proify.lyricon.common.util.safe
 
 fun Context.getPrivateSharedPreferences(name: String): SharedPreferences {
-    return getSharedPreferences(name, Context.MODE_PRIVATE).safe()
+    return (applicationContext ?: this).getSharedPreferences(name, Context.MODE_PRIVATE).safe()
 }
 
-/**
- * 尝试获取 world-readable 的 SharedPreferences，失败则返回私有的
- */
-@SuppressLint("WorldReadableFiles")
-fun Context.getWorldReadableSharedPreferences(name: String): SharedPreferences = try {
-    @Suppress("DEPRECATION")
-    getSharedPreferences(name, Context.MODE_WORLD_READABLE).safe()
-} catch (_: Exception) {
+/** Preferences are private; LSPosed service handles cross-process sharing. */
+fun Context.getWorldReadableSharedPreferences(name: String): SharedPreferences =
     getPrivateSharedPreferences(name)
-}
 
 @Suppress("unused")
 fun Context.getSharedPreferences(name: String, worldReadable: Boolean): SharedPreferences =

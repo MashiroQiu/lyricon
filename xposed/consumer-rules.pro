@@ -1,6 +1,4 @@
--dontwarn android.app.AndroidAppHelper
 -dontwarn android.content.res.**
--dontwarn de.robv.android.xposed.**
 
 -dontwarn javax.annotation.Nullable
 -dontwarn java.lang.reflect.AnnotatedType

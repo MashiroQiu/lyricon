@@ -13,8 +13,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import androidx.core.view.isVisible
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -39,7 +39,7 @@ object OplusCapsuleHooker {
         private set
 
     private var lastIsShowing: Boolean? = null
-    private var unhook: XC_MethodHook.Unhook? = null
+    private var unhook: io.github.libxposed.api.XposedInterface.HookHandle? = null
     private var currentHook: SetVisibilityMethodHook? = null
 
     @SuppressLint("PrivateApi")
@@ -56,7 +56,7 @@ object OplusCapsuleHooker {
 
         val hook = SetVisibilityMethodHook()
         currentHook = hook
-        unhook = XposedHelpers.findAndHookMethod(
+        unhook = HookMethods.findAndHookMethod(
             classLoader.loadClass(
                 View::class.java.getName()
             ),
@@ -76,7 +76,7 @@ object OplusCapsuleHooker {
         listeners.forEach { it.onColorOsCapsuleVisibilityChanged(isShowing) }
     }
 
-    private class SetVisibilityMethodHook : XC_MethodHook() {
+    private class SetVisibilityMethodHook : MethodCallback() {
         companion object {
             /** 隐藏事件的 debounce 延迟，用于吸收胶囊切换时的瞬态 INVISIBLE */
             private const val HIDE_DEBOUNCE_MS = 80L

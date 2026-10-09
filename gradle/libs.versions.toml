@@ -41,7 +41,8 @@ miuixIcons = "0.9.0"
 miuixPreference = "0.9.0"
 
 # Hook / Reflection
-xposed = "82"
+xposed = "102.0.0"
+xposedService = "101.0.0"
 
 # Testing
 androidxJunit = "1.3.0"
@@ -92,7 +93,8 @@ miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.re
 # ===== Hook / Reflection =====
 #noinspection UnusedVersionCatalogEntry
 opencc4j = { module = "com.github.houbb:opencc4j", version.ref = "opencc4j" }
-xposed-api = { module = "de.robv.android.xposed:api", version.ref = "xposed" }
+xposed-api = { module = "io.github.libxposed:api", version.ref = "xposed" }
+xposed-service = { module = "io.github.libxposed:service", version.ref = "xposedService" }
 
 # ===== Testing =====
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }

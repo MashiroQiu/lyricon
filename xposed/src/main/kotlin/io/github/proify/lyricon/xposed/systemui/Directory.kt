@@ -7,7 +7,6 @@
 package io.github.proify.lyricon.xposed.systemui
 
 import android.content.Context
-import de.robv.android.xposed.XSharedPreferences
 import io.github.proify.lyricon.common.PackageNames
 import java.io.File
 
@@ -16,9 +15,6 @@ object Directory {
     private lateinit var tempDir: File
     private lateinit var packageDir: File
 
-    val preferenceDirectory: File? by lazy {
-        XSharedPreferences(PackageNames.APPLICATION, "137666").file.parentFile
-    }
 
     fun initialize(context: Context) {
         val filesDir = context.filesDir

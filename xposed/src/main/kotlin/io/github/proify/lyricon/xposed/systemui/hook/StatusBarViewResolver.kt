@@ -12,8 +12,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
 import android.view.ViewGroup
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import io.github.proify.lyricon.xposed.logger.YLog
 import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
 import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
@@ -22,12 +22,13 @@ import io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController
  * 状态栏视图解析工具类 (StatusBarViewResolver)
  * 职责：通过 Hook 拦截系统资源加载过程，捕获状态栏根视图 (Root View) 并分发给订阅者。
  */
+typealias OnViewResolvedListener = (statusBarRoot: ViewGroup) -> Unit
+
 object StatusBarViewResolver {
 
     /**
      * 状态栏视图获取成功的回调定义
      */
-    typealias OnViewResolvedListener = (statusBarRoot: ViewGroup) -> Unit
 
     private val registry = mutableListOf<OnViewResolvedListener>()
     private var isInitialized = false
@@ -68,14 +69,14 @@ object StatusBarViewResolver {
         if (targetId == 0) return
 
         try {
-            XposedHelpers.findAndHookMethod(
+            HookMethods.findAndHookMethod(
                 "android.view.LayoutInflater",
                 classLoader,
                 "inflate",
                 Int::class.javaPrimitiveType,
                 ViewGroup::class.java,
                 Boolean::class.javaPrimitiveType,
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     @Throws(Throwable::class)
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val currentLayoutId = param.args[0] as Int
@@ -97,12 +98,12 @@ object StatusBarViewResolver {
         // Hook PhoneStatusBarView.onConfigurationChanged 感知横竖屏
         // 横屏时通知 MiuiIslandHooker，让其静默丢弃岛回调并恢复时钟/歌词正常显示
         try {
-            XposedHelpers.findAndHookMethod(
+            HookMethods.findAndHookMethod(
                 "com.android.systemui.statusbar.phone.PhoneStatusBarView",
                 classLoader,
                 "onConfigurationChanged",
                 Configuration::class.java,
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val config = param.args[0] as? Configuration ?: return
                         val landscape = config.orientation == Configuration.ORIENTATION_LANDSCAPE

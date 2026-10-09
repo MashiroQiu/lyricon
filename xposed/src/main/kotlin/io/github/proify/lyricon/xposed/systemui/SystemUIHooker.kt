@@ -9,7 +9,7 @@ package io.github.proify.lyricon.xposed.systemui
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.core.view.doOnAttach
-import de.robv.android.xposed.XSharedPreferences
+import io.github.proify.lyricon.xposed.ModuleEntry
 import io.github.proify.android.extensions.deflate
 import io.github.proify.android.extensions.json
 import io.github.proify.android.extensions.safeEncode
@@ -161,7 +161,7 @@ object SystemUIHooker : PackageHooker() {
 
     private fun initLyriconService() {
         val context = appContext ?: return
-        val defaultSp = XSharedPreferences(PackageNames.APPLICATION)
+        val defaultSp = ModuleEntry.instance.getRemotePreferences(PackageNames.APPLICATION + "_preferences")
         val coreServiceDisable = defaultSp.getBoolean("core_service_disable", false)
 
         if (!coreServiceDisable) {

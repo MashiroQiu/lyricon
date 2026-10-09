@@ -10,6 +10,9 @@ import android.animation.LayoutTransition
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
+import android.view.ViewTreeObserver
 import android.graphics.Rect
 import android.os.Handler
 import android.util.Log
@@ -216,15 +219,36 @@ class StatusBarLyric(
         textView.lyricCountChangeListeners += lyricCountChangeListener
     }
 
+    private val cameraLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
+        if (usesCameraWidth() && miuiIslandRect == null && !isOplusCapsuleShowing) {
+            val target = calculateContainerWidth(currentStyle.basicStyle)
+            if (layoutParams?.width != target) updateWidthInternal(currentStyle)
+        }
+    }
+
+    private fun usesCameraWidth(): Boolean {
+        val maker = Build.MANUFACTURER.lowercase()
+        val brand = Build.BRAND.lowercase()
+        return (maker == "xiaomi" || brand in setOf("xiaomi", "redmi", "poco")) &&
+            resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        viewTreeObserver.addOnGlobalLayoutListener(cameraLayoutListener)
         // 延迟一帧读取，确保 View 树第一次 layout 已完成，坐标稳定
         post {
             val loc = IntArray(2)
             (parent as? View)?.getLocationOnScreen(loc)
             cachedContainerScreenLeft = loc[0]
             Log.d(TAG, "onAttachedToWindow: cachedContainerScreenLeft=$cachedContainerScreenLeft")
+            updateWidthInternal(currentStyle)
         }
+    }
+
+    override fun onDetachedFromWindow() {
+        if (viewTreeObserver.isAlive) viewTreeObserver.removeOnGlobalLayoutListener(cameraLayoutListener)
+        super.onDetachedFromWindow()
     }
 
     // --- 公开 API ---
@@ -422,12 +446,15 @@ class StatusBarLyric(
         // 防止 dynamicWidthEnabled 场景下 WRAP_CONTENT 的 textView 溢出容器边界，
         // 导致歌词文本戳入岛区域或把时钟顶出来。
         // 岛消失后 updateTextViewWidthMode 会被 updateLayoutConfig 还原。
-        if (miuiIslandRect != null || isOplusCapsuleShowing) {
+        if (miuiIslandRect != null || isOplusCapsuleShowing || usesCameraWidth()) {
             val lp = (textView.layoutParams as? LayoutParams)
                 ?: LayoutParams(0, LayoutParams.WRAP_CONTENT)
             lp.width = 0
             lp.weight = 1f
             textView.layoutParams = lp
+        }
+        if (miuiIslandRect == null && !isOplusCapsuleShowing && !usesCameraWidth()) {
+            updateTextViewWidthMode(style.basicStyle)
         }
         requestLayout()
         Log.d(TAG, "updateWidthInternal: $width")
@@ -442,6 +469,7 @@ class StatusBarLyric(
         miuiIslandRect?.let { rect ->
             return calculateIslandAwareWidth(rect)
         }
+        if (usesCameraWidth()) return calculateCameraWidth()
         return if (basicStyle.dynamicWidthEnabled) {
             LayoutParams.WRAP_CONTENT
         } else {
@@ -463,10 +491,29 @@ class StatusBarLyric(
         return maxWidth
     }
 
+    /** Fill the actual space from the lyric anchor to the left edge of the camera cutout. */
+    private fun calculateCameraWidth(): Int {
+        val root = rootView
+        val rootScreen = IntArray(2)
+        val rootWindow = IntArray(2)
+        val lyricScreen = IntArray(2)
+        root.getLocationOnScreen(rootScreen)
+        root.getLocationInWindow(rootWindow)
+        getLocationOnScreen(lyricScreen)
+        val windowOffset = rootScreen[0] - rootWindow[0]
+        val cutout = rootWindowInsets?.displayCutout?.boundingRects
+            ?.filter { !it.isEmpty && it.top <= root.height && it.left > root.width / 4 }
+            ?.minByOrNull { it.left }
+        val cameraLeft = cutout?.left?.plus(windowOffset)
+            ?: (rootScreen[0] + (root.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / 2 - 12.dp)
+        val lyricLeft = if (isLaidOut) lyricScreen[0] else cachedContainerScreenLeft + currentStyle.basicStyle.margins.left.dp
+        return CameraWidth.available(cameraLeft, lyricLeft, 4.dp + currentStyle.basicStyle.margins.right.dp)
+    }
+
     private fun updateTextViewWidthMode(basicStyle: BasicStyle) {
         val lp = (textView.layoutParams as? LayoutParams)
             ?: LayoutParams(0, LayoutParams.WRAP_CONTENT)
-        if (basicStyle.dynamicWidthEnabled) {
+        if (basicStyle.dynamicWidthEnabled && !usesCameraWidth() && miuiIslandRect == null && !isOplusCapsuleShowing) {
             lp.width = LayoutParams.WRAP_CONTENT
             lp.weight = 0f
         } else {

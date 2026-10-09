@@ -50,6 +50,7 @@ configure<LibraryExtension> {
 }
 
 dependencies {
+    implementation(libs.xposed.service)
     // --- 模块依赖 ---
     implementation(project(":bridge"))
     implementation(project(":common"))

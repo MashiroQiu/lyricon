@@ -56,17 +56,18 @@ internal class LyricLineAssembler(
             isAlignedRight = source.isAlignedRight
 
             when {
-                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
-                    text = source.secondary
-                    words = wordBuilder.build(source, source.secondary, source.secondaryWords)
-                    generated = words !== source.secondaryWords
-                }
                 displayTranslation && (!source.translation.isNullOrBlank()
                         || !source.translationWords.isNullOrEmpty()) -> {
                     text = source.translation
                     words = wordBuilder.build(source, source.translation, source.translationWords)
                     metadata = lyricMetadataOf("translation" to "true")
                     generated = words !== source.translationWords
+                }
+
+                !source.secondary.isNullOrBlank() || !source.secondaryWords.isNullOrEmpty() -> {
+                    text = source.secondary
+                    words = wordBuilder.build(source, source.secondary, source.secondaryWords)
+                    generated = words !== source.secondaryWords
                 }
                 displayRoma -> {
                     text = source.roma

@@ -5,6 +5,9 @@
  */
 package io.github.proify.lyricon.app
 
+import io.github.libxposed.service.XposedService
+import io.github.libxposed.service.XposedServiceHelper
+import io.github.proify.lyricon.app.bridge.AppBridge
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
@@ -25,8 +28,30 @@ class LyriconApp : Application() {
         super.attachBaseContext(AppLangUtils.wrapContext(base))
     }
 
-    override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences =
-        super.getSharedPreferences(name, mode).safe()
+    override fun onCreate() {
+        super.onCreate()
+        // Reuse the existing config and back up files; no world-readable filesystem access.
+        dataDir.resolve("shared_prefs").listFiles()?.filter { it.extension == "xml" }?.forEach {
+            getSharedPreferences(it.nameWithoutExtension, MODE_PRIVATE)
+        }
+        getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+        XposedServiceHelper.registerListener(object : XposedServiceHelper.OnServiceListener {
+            override fun onServiceBind(service: XposedService) {
+                AppBridge.moduleActive = true
+                RemotePreferenceSync.bind(service)
+            }
+            override fun onServiceDied(service: XposedService) {
+                AppBridge.moduleActive = false
+                RemotePreferenceSync.bind(null)
+            }
+        })
+    }
+
+    override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences {
+        val prefs = super.getSharedPreferences(name, MODE_PRIVATE)
+        if (name != null) RemotePreferenceSync.track(name, prefs)
+        return prefs.safe()
+    }
 
     companion object {
         const val TAG: String = "LyriconApp"

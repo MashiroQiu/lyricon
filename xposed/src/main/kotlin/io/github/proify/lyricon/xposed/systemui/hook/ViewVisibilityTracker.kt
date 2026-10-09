@@ -7,8 +7,8 @@
 package io.github.proify.lyricon.xposed.systemui.hook
 
 import android.view.View
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedHelpers
+import io.github.proify.lyricon.xposed.hook.MethodCallback
+import io.github.proify.lyricon.xposed.hook.HookMethods
 import io.github.proify.lyricon.xposed.logger.YLog
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,7 +36,7 @@ object ViewVisibilityTracker {
     private val originalVisibilityMap = ConcurrentHashMap<Int, Int>()
 
     /** 存储当前 Hook 的句柄，用于初始化时清理旧 Hook */
-    private var unhookHandle: XC_MethodHook.Unhook? = null
+    private var unhookHandle: io.github.libxposed.api.XposedInterface.HookHandle? = null
 
     /**
      * 初始化 Hook 逻辑
@@ -48,12 +48,12 @@ object ViewVisibilityTracker {
             unhookHandle?.unhook()
 
             // Hook View.setFlags(int flags, int mask)
-            unhookHandle = XposedHelpers.findAndHookMethod(
+            unhookHandle = HookMethods.findAndHookMethod(
                 View::class.java,
                 "setFlags",
                 Int::class.javaPrimitiveType, // flags
                 Int::class.javaPrimitiveType, // mask
-                object : XC_MethodHook() {
+                object : MethodCallback() {
                     @Throws(Throwable::class)
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val view = param.thisObject as View
@@ -72,7 +72,7 @@ object ViewVisibilityTracker {
      * @param view 当前正在执行 setFlags 的 View 实例
      * @param param Xposed 方法回调参数
      */
-    private fun handleSetFlags(view: View, param: XC_MethodHook.MethodHookParam) {
+    private fun handleSetFlags(view: View, param: MethodCallback.MethodHookParam) {
         val viewId = view.id
         // 如果 View 没有设置 ID，则不进行追踪（根据业务需求可调整）
         if (viewId == View.NO_ID) return

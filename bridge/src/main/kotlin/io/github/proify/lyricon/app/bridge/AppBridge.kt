@@ -20,7 +20,9 @@ import java.io.File
 object AppBridge {
 
     @Keep
-    fun isModuleActive(): Boolean = false
+    fun isModuleActive(): Boolean = moduleActive
+
+    @Volatile var moduleActive: Boolean = false
 
     @Keep
     fun getPreferenceDirectory(context: Context): File = context.dataDir.resolve("shared_prefs")

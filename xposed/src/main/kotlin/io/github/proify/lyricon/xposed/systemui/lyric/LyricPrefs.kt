@@ -6,16 +6,32 @@
 
 package io.github.proify.lyricon.xposed.systemui.lyric
 
-import de.robv.android.xposed.XSharedPreferences
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import io.github.proify.lyricon.xposed.ModuleEntry
 import io.github.proify.lyricon.app.bridge.AppBridge
 import io.github.proify.lyricon.common.PackageNames
 import io.github.proify.lyricon.lyric.style.BasicStyle
 import io.github.proify.lyricon.lyric.style.LyricStyle
 import io.github.proify.lyricon.lyric.style.PackageStyle
 
+private class RemoteStylePreferences(private val delegate: SharedPreferences) : SharedPreferences by delegate {
+    @Volatile private var dirty = true
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        dirty = true
+        Handler(Looper.getMainLooper()).post {
+            LyricViewController.applyConfigurationUpdate(LyricPrefs.getLyricStyle())
+        }
+    }
+    init { delegate.registerOnSharedPreferenceChangeListener(listener) }
+    fun hasFileChanged() = dirty
+    fun reload() { dirty = false }
+}
+
 object LyricPrefs {
 
-    private val prefsCache = mutableMapOf<String, XSharedPreferences>()
+    private val prefsCache = mutableMapOf<String, RemoteStylePreferences>()
     private val packageStyleCache = mutableMapOf<String, PackageStyleCache>()
 
     @Volatile
@@ -23,7 +39,7 @@ object LyricPrefs {
 
     /* ---------------- base style ---------------- */
 
-    private val baseStylePrefs: XSharedPreferences =
+    private val baseStylePrefs: RemoteStylePreferences =
         createXPrefs(AppBridge.LyricStylePrefs.PREF_NAME_BASE_STYLE)
 
     val baseStyle: BasicStyle = BasicStyle().apply {
@@ -39,7 +55,7 @@ object LyricPrefs {
 
     /* ---------------- default package style ---------------- */
 
-    private val defaultPackageStylePrefs: XSharedPreferences by lazy {
+    private val defaultPackageStylePrefs: RemoteStylePreferences by lazy {
         getPackagePrefs(
             AppBridge.LyricStylePrefs.DEFAULT_PACKAGE_NAME
         )
@@ -58,7 +74,7 @@ object LyricPrefs {
 
     /* ---------------- package manager ---------------- */
 
-    private val packageStyleManagerPrefs: XSharedPreferences =
+    private val packageStyleManagerPrefs: RemoteStylePreferences =
         createXPrefs(AppBridge.LyricStylePrefs.PREF_PACKAGE_STYLE_MANAGER)
         get() {
             if (field.hasFileChanged()) {
@@ -94,18 +110,18 @@ object LyricPrefs {
     private fun getPackagePrefName(packageName: String): String =
         AppBridge.LyricStylePrefs.getPackageStylePreferenceName(packageName)
 
-    private fun getPackagePrefs(packageName: String): XSharedPreferences {
+    private fun getPackagePrefs(packageName: String): RemoteStylePreferences {
         val prefName = getPackagePrefName(packageName)
         return prefsCache.getOrPut(prefName) {
             createXPrefs(prefName)
         }
     }
 
-    private fun createXPrefs(name: String): XSharedPreferences {
-        return XSharedPreferences(PackageNames.APPLICATION, name)
+    private fun createXPrefs(name: String): RemoteStylePreferences {
+        return RemoteStylePreferences(ModuleEntry.instance.getRemotePreferences(name))
     }
 
-    private fun XSharedPreferences.ensureLatest(): XSharedPreferences {
+    private fun RemoteStylePreferences.ensureLatest(): RemoteStylePreferences {
         runCatching { reload() }
         return this
     }
@@ -113,7 +129,7 @@ object LyricPrefs {
     /* ---------------- package style cache ---------------- */
 
     private class PackageStyleCache(
-        private val prefs: XSharedPreferences,
+        private val prefs: RemoteStylePreferences,
         private val style: PackageStyle
     ) {
         fun getStyle(): PackageStyle {

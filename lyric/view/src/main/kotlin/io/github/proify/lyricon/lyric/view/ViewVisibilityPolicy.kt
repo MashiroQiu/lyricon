@@ -26,8 +26,8 @@ internal object ViewVisibilityPolicy {
 
         val pSize = s.primary.size
         val sSize = s.secondary.size
-        val isTransition = v0.main.isFinished && v1 != null
-        val v0HasSec = v0.secondary.model.let { it.text.isNotBlank() || it.words.isNotEmpty() }
+        val isTransition = v0.main.isPlayFinished() && v1 != null
+        val v0HasSec = v0.secondary.lyric.let { it.text.isNotBlank() || it.words.isNotEmpty() }
 
         // Phase 1: size assignment
         v0.main.setTextSize(if (isTransition) sSize else pSize)
@@ -36,7 +36,7 @@ internal object ViewVisibilityPolicy {
         v1?.secondary?.setTextSize(sSize)
 
         // Phase 2+3: candidate flags + slot enforcement (max 2 visible LyricLineView)
-        val wantV0sec = !isTransition && (v0.alwaysShowSecondary || (v0HasSec && v0.secondary.isStarted))
+        val wantV0sec = !isTransition && (v0.alwaysShowSecondary || (v0HasSec && v0.secondary.isPlayStarted()))
         var remaining = 2
         val v0mVis = remaining > 0; if (v0mVis) remaining--
         val v1mVis = v1 != null && remaining > 0; if (v1mVis) remaining--

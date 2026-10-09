@@ -8,7 +8,7 @@ package io.github.proify.lyricon.app.util
 
 import android.content.SharedPreferences
 import io.github.proify.android.extensions.fromJson
-import io.github.proify.android.extensions.getWorldReadableSharedPreferences
+import io.github.proify.android.extensions.getPrivateSharedPreferences
 import io.github.proify.android.extensions.json
 import io.github.proify.android.extensions.safeDecode
 import io.github.proify.android.extensions.toJson
@@ -41,7 +41,7 @@ object LyricPrefs {
 
     /** 获取指定名称的 SharedPreferences*/
     fun getSharedPreferences(name: String): SharedPreferences {
-        return LyriconApp.instance.getWorldReadableSharedPreferences(name)
+        return LyriconApp.instance.getPrivateSharedPreferences(name)
     }
 
     /** 获取指定包名对应的样式配置偏好名称 */

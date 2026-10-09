@@ -58,7 +58,7 @@ internal class SubscriberRemoteEndpoint(
         val service = remoteService
         if (notifyRemote) runCatching { service?.disconnect() }
             .onFailure { Log.e(TAG, "Failed to disconnect remote service", it) }
-        listenerDispatcher.release(clearListeners = destroy)
+        listenerDispatcher.release(clearAllListeners = destroy)
         bind(null)
     }
 
