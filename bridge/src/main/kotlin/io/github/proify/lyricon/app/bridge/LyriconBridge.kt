@@ -42,7 +42,7 @@ object LyriconBridge {
     private val handlers = ConcurrentHashMap<String, suspend (Bundle) -> Bundle?>()
 
     /** 桥接器全局协程作用域 */
-    private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
     /** 广播接收器：处理来自其他进程的请求 */
     private val receiver = object : BroadcastReceiver() {
@@ -73,6 +73,7 @@ object LyriconBridge {
 
     @Volatile
     private var isInitialized = false
+    private var registeredContext: Context? = null
 
     /**
      * 初始化并注册路由。
@@ -88,6 +89,7 @@ object LyriconBridge {
                     IntentFilter(ACTION_IPC),
                     ContextCompat.RECEIVER_EXPORTED
                 )
+                registeredContext = context.applicationContext
                 isInitialized = true
             }
         }
@@ -98,6 +100,14 @@ object LyriconBridge {
      * 启动一个请求构造链。
      * @param context 发起请求的上下文
      */
+    fun close() {
+        registeredContext?.unregisterReceiver(receiver)
+        registeredContext = null
+        isInitialized = false
+        handlers.clear()
+        bridgeScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+    }
+
     fun with(context: Context) = RequestTask(context.applicationContext)
 
     // --- 内部作用域类 ---
@@ -213,6 +223,7 @@ object LyriconBridge {
                 putBundle(EXTRA_PAYLOAD, data)
                 // 注入匿名 Binder 用于跨进程回传结果
                 putBinder(EXTRA_CALLBACK, object : IBridgeCallback.Stub() {
+                    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
                     override fun onReply(res: Bundle) {
                         onReplyAction?.invoke(res)
                     }

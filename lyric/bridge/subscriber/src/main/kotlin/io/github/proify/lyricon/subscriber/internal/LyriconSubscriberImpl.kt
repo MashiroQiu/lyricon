@@ -45,7 +45,7 @@ internal class LyriconSubscriberImpl(
 ) : LyriconSubscriber {
     private val destroyed = AtomicBoolean(false)
     private val listeners = CopyOnWriteArraySet<ConnectionListener>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     private val remote =
         CentralConnection { disconnect(remote = true, notifyRemote = false) }
     private val registration = RegistrationCoordinator()
@@ -183,11 +183,11 @@ internal class LyriconSubscriberImpl(
         }
 
         override fun onBootCompleted() {
-            // 中心服务重启：仍期望连接且当前不在连接中时补一次注册。
-            if (wantsConnection &&
-                status != SubscriberStatus.CONNECTED &&
-                status != SubscriberStatus.CONNECTING
-            ) {
+            // Framework Binder liveness does not identify a central generation after hot reload.
+            if (wantsConnection && !destroyed.get()) {
+                abortAttempt()
+                remote.disconnect(notifyRemote = false)
+                markDisconnected(byRemote = true)
                 start(manual = false)
             }
         }

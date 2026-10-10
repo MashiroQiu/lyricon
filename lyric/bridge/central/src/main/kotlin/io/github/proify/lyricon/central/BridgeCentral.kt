@@ -52,6 +52,14 @@ object BridgeCentral {
         )
     }
 
+    fun close() {
+        if (!::context.isInitialized) return
+        context.unregisterReceiver(receiver)
+        CentralRuntime.subscribers.closeAll()
+        CentralRuntime.providers.closeAll()
+        ScreenStateMonitor.release()
+    }
+
     /**
      * 发送中央启动完成广播。
      *

@@ -95,6 +95,7 @@ internal class MarqueeTitleView(context: Context) : View(context) {
 
     private var delayRemainingMs = 0L
     private var frameAt = 0L
+    private val delayedStart = Runnable { start() }
 
     private val ghostSpacing = GHOST_SPACING_DP.dp.toFloat()
     private val scrollSpeedPxPerMs =
@@ -121,12 +122,18 @@ internal class MarqueeTitleView(context: Context) : View(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // 入场延迟后开始滚动
-        postDelayed({ start() }, START_DELAY_MS)
+        postDelayed(delayedStart, START_DELAY_MS)
     }
 
     override fun onDetachedFromWindow() {
-        resetState()
+        disposeForReload()
         super.onDetachedFromWindow()
+    }
+
+    fun disposeForReload() {
+        removeCallbacks(delayedStart)
+        removeCallbacks(tick)
+        resetState()
     }
 
     /** 主副本 + 幽灵副本自绘。 */

@@ -44,4 +44,5 @@ internal class ProviderDirectory(
     fun unregister(connection: ProviderConnection) {
         registry.unregister(connection)
     }
+    fun closeAll() = registry.closeAll()
 }

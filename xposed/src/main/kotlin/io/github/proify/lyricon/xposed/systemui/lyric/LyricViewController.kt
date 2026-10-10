@@ -88,6 +88,15 @@ object LyricViewController : ActivePlayerListener,
         NotificationCoverHelper.registerListener(this)
     }
 
+    fun close() {
+        mainHandler.removeCallbacksAndMessages(null)
+        LyricDataHub.removeListener(this)
+        MiuiIslandHooker.unregisterListener(this)
+        OplusCapsuleHooker.unregisterListener(this)
+        NotificationCoverHelper.unregisterListener(this)
+        currentSong = null
+    }
+
     /**
      * 当歌曲发生切换时回调。
      * @param song 新歌曲对象，若停止播放则为 null

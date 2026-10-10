@@ -136,7 +136,16 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         requestInvalidate = { postInvalidateOnAnimation() },
         shouldRun = { isAttachedToWindow },
         post = { runnable -> post(runnable) },
+        removePost = { runnable -> removeCallbacks(runnable) },
     )
+
+    private val scrollStart = Runnable {
+        if (isAttachedToWindow) {
+            scrollRenderer.update(_model, lineState, 0, measuredWidth, measuredHeight)
+            animator.stop()
+            animator.startIfNeeded()
+        }
+    }
 
     private var activeRenderer: LineRenderer = scrollRenderer
 
@@ -260,6 +269,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     fun reset() {
+        removeCallbacks(scrollStart)
         animator.stop()
         lineState.reset()
         scrollRenderer.reset(lineState)
@@ -353,11 +363,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         scrollStarted = true
         lineState.reset()
         if (!isOverflow) return
-        post {
-            scrollRenderer.update(_model, lineState, 0, measuredWidth, measuredHeight)
-            animator.stop()
-            animator.startIfNeeded()
-        }
+        post(scrollStart)
     }
 
     private fun updateColorsIfReady() {

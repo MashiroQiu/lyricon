@@ -52,7 +52,7 @@ internal class CentralConnection(
     private val machine = ConnectionStateMachine()
 
     /** 监听器通知回调的主线程作用域。 */
-    private val callbackScope = CoroutineScope(Dispatchers.Main.immediate)
+    private val callbackScope = CoroutineScope(Dispatchers.Main.immediate).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
     /** 状态转移与 Binder 操作互斥锁。 */
     private val transitionLock = Any()
@@ -88,6 +88,9 @@ internal class CentralConnection(
     fun onRegistrationTimeout() {
         transition(ConnectionTrigger.REGISTRATION_TIMEOUT)
     }
+
+    /** A central restart replaces even a still-alive framework Binder. */
+    fun onCentralRestart() { transition(ConnectionTrigger.SERVICE_LOST) }
 
     /** 用户主动断开。 */
     fun disconnectByUser() {

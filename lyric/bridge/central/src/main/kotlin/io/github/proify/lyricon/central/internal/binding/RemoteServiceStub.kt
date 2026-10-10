@@ -20,6 +20,8 @@ import io.github.proify.lyricon.provider.IRemoteService
 internal class RemoteServiceStub(
     private var connection: ProviderConnection? = null
 ) : IRemoteService.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
 
     /** 提供端的播放命令桩。 */
     private var player: PlayerCommandStub? = connection?.let {

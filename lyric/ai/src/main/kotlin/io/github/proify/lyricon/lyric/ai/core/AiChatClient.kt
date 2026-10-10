@@ -38,12 +38,17 @@ object AiChatClient {
     private const val TAG = "LyriconAiChatClient"
     private const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
     private const val MAX_CLIENTS = 8
+    @Volatile private var closed = false
 
     /** 有界客户端缓存：超限淘汰最久未用的客户端（其底层线程池随之释放）。 */
     private val clients = object : LinkedHashMap<String, OpenAIClient>(MAX_CLIENTS, 0.75f, true) {
         override fun removeEldestEntry(
             eldest: MutableMap.MutableEntry<String, OpenAIClient>?
-        ): Boolean = size > MAX_CLIENTS
+        ): Boolean {
+            if (size <= MAX_CLIENTS) return false
+            eldest?.value?.close()
+            return true
+        }
     }
 
     /**
@@ -172,9 +177,18 @@ object AiChatClient {
         })
     }
 
+    fun close() {
+        synchronized(clients) {
+            closed = true
+            clients.values.forEach { it.close() }
+            clients.clear()
+        }
+    }
+
     private fun clientFor(baseUrl: String, apiKey: String): OpenAIClient {
         val key = "$baseUrl|$apiKey"
         return synchronized(clients) {
+            if (closed) throw CancellationException("AI client generation retired")
             clients[key] ?: OpenAIOkHttpClient.builder()
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)

@@ -71,6 +71,7 @@ class StatusBarViewController(
     private var lastAnchor = ""
     private var lastInsertionOrder = -1
     private var internalRemoveLyricViewFlag = false
+    private var destroyed = false
     private var lastHighlightView: View? = null
     private var colorMonitorView: View? = null
     private var coverColorPaletteResult: ColorPaletteResult? = null
@@ -112,11 +113,13 @@ class StatusBarViewController(
         StatusBarColorMonitor.bindClockView(colorMonitorView)
         StatusBarColorMonitor.addListener(colorChangeListener)
 
-        statusBarView.doOnAttach { checkLyricViewExists() }
+        if (statusBarView.isAttachedToWindow) checkLyricViewExists()
         YLog.info(tag = TAG, "Lyric view created for $statusBarView")
     }
 
     fun onDestroy() {
+        if (destroyed) return
+        destroyed = true
         statusBarView.removeOnAttachStateChangeListener(statusBarAttachListener)
         statusBarView.viewTreeObserver.removeOnGlobalLayoutListener(onGlobalLayoutListener)
         lyricView.removeOnAttachStateChangeListener(lyricAttachListener)
@@ -129,6 +132,12 @@ class StatusBarViewController(
         StatusBarColorMonitor.removeListener(colorChangeListener)
         colorMonitorView?.let { StatusBarColorMonitor.unbindClockView(it) }
         colorMonitorView = null
+        lastHighlightView?.background = null
+        lastHighlightView = null
+        visibilityController.applyVisibilityRules(currentLyricStyle.basicStyle.visibilityRules, false)
+        internalRemoveLyricViewFlag = true
+        lyricView.disposeForReload()
+        (lyricView.parent as? ViewGroup)?.removeView(lyricView)
         YLog.info(tag = TAG, "Lyric view destroyed for $statusBarView")
     }
 
@@ -443,7 +452,7 @@ class StatusBarViewController(
     }
 
     private val statusBarAttachListener = object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(v: View) {}
+        override fun onViewAttachedToWindow(v: View) { if (!destroyed) checkLyricViewExists() }
         override fun onViewDetachedFromWindow(v: View) {}
     }
 

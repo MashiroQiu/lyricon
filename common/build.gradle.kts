@@ -64,6 +64,7 @@ configure<LibraryExtension> {
 }
 
 dependencies {
+    api(libs.kotlinx.coroutines.android)
     implementation(libs.androidsvg)
     api(libs.kotlinx.serialization.json)
     api(libs.androidx.core.ktx)

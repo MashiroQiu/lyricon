@@ -35,8 +35,10 @@ import java.util.concurrent.CopyOnWriteArraySet
  */
 @RequiresApi(Build.VERSION_CODES.O_MR1)
 internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     private var positionMemory: SharedMemory? = null
     private var positionBuffer: ByteBuffer? = null
     private var positionJob: Job? = null
@@ -111,9 +113,16 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
 
     /** 释放共享内存映射并停止位置轮询。 */
     private fun detachPositionMemory() {
-        positionJob?.cancel()
+        val reader = positionJob
+        val buffer = positionBuffer
         positionJob = null
         positionBuffer = null
+        reader?.cancel()
+        // A cancelled reader may still be inside getLong; unmap only after it has finished.
+        if (buffer != null) {
+            if (reader == null) SharedMemory.unmap(buffer)
+            else reader.invokeOnCompletion { runCatching { SharedMemory.unmap(buffer) } }
+        }
         positionMemory?.close()
         positionMemory = null
     }

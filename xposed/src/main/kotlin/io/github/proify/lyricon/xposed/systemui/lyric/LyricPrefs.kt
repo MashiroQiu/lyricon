@@ -27,6 +27,8 @@ import io.github.proify.lyricon.xposed.ModuleEntry
  */
 object LyricPrefs {
     private const val TAG = "LyricPrefs"
+    private val ownedPreferences = mutableListOf<StateSharedPreferencesWrapper>()
+    private var retiring = false
 
     /** 偏好实例缓存，Key 为偏好文件名，Value 为对应的 StateSharedPreferences */
     private val prefsCache = mutableMapOf<String, StateSharedPreferences>()
@@ -41,9 +43,18 @@ object LyricPrefs {
     /** 全局偏好变更监听器，触发时刷新歌词视图配置 */
     private val globalSharedPreferenceChangeListener: SharedPreferences.OnSharedPreferenceChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            if (retiring) return@OnSharedPreferenceChangeListener
             LyricViewController.applyConfigurationUpdate(getLyricStyle())
             Log.i(TAG, "global prefs changed")
         }
+
+    fun close() {
+        retiring = true
+        ownedPreferences.forEach { it.close() }
+        ownedPreferences.clear()
+        prefsCache.clear()
+        packageStyleCache.clear()
+    }
 
     /* ---------------- base style ---------------- */
 
@@ -155,7 +166,7 @@ object LyricPrefs {
         return StateSharedPreferencesWrapper(
             remotePrefs,
             globalSharedPreferenceChangeListener
-        )
+        ).also { ownedPreferences.add(it) }
     }
 
     /* ---------------- package style cache ---------------- */
@@ -260,8 +271,7 @@ object LyricPrefs {
         /** 偏好是否已变更的标记 */
         private var isChanged = false
 
-        init {
-            prefs.registerOnSharedPreferenceChangeListener { p, key ->
+        private val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
                 Log.i(
                     TAG,
                     "prefs changed: $name, key=$key, ${Thread.currentThread()},${Looper.myLooper()}"
@@ -269,8 +279,9 @@ object LyricPrefs {
                 isChanged = true
                 orderPrefChangeListener.onSharedPreferenceChanged(p, key)
                 Log.i(TAG, "called listener $orderPrefChangeListener")
-            }
         }
+        init { prefs.registerOnSharedPreferenceChangeListener(listener) }
+        fun close() = prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
         override fun hasChanged(): Boolean = isChanged
 

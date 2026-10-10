@@ -66,6 +66,15 @@ object SystemUIMediaUtils {
      * 初始化工具类
      * @param context 建议传入 ApplicationContext 以防止内存泄漏。
      */
+    fun close() {
+        mediaSessionManager?.removeOnActiveSessionsChangedListener(sessionListener)
+        mediaSessionManager = null
+        activeSessions.values.forEach { it.release() }
+        activeSessions.clear()
+        listeners.clear()
+        mainHandler.removeCallbacksAndMessages(null)
+    }
+
     fun init(context: Context) {
         if (mediaSessionManager != null) return
 
@@ -91,6 +100,7 @@ object SystemUIMediaUtils {
      *  @param controllers 当前系统中最新的活跃控制器列表
      */
     private fun updateCallbackRegistrations(controllers: List<MediaController>?) {
+        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
         // 提取最新 Token 集合用于比对差集
         val newTokens: Set<MediaSession.Token> =
             controllers?.map { it.sessionToken }?.toSet() ?: emptySet()
@@ -149,6 +159,7 @@ object SystemUIMediaUtils {
          */
         private val callback: MediaController.Callback = object : MediaController.Callback() {
             override fun onMetadataChanged(metadata: MediaMetadata?) {
+                if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
                 metadata?.let { m: MediaMetadata ->
                     mainHandler.post {
                         listeners.forEach { it.onMediaChanged(controller, m) }
@@ -157,6 +168,7 @@ object SystemUIMediaUtils {
             }
 
             override fun onPlaybackStateChanged(state: PlaybackState?) {
+                if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
                 state?.let { s: PlaybackState ->
                     mainHandler.post {
                         listeners.forEach { it.onPlaybackStateChanged(controller, s) }
@@ -165,6 +177,7 @@ object SystemUIMediaUtils {
             }
 
             override fun onSessionDestroyed() {
+                if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
                 mainHandler.post {
                     // 会话销毁时从容器中移除并解绑
                     activeSessions.remove(controller.sessionToken)?.release()

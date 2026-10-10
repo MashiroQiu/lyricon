@@ -28,7 +28,7 @@ object LyricDataHub : ActivePlayerListener {
     private const val TAG = "LyricDataHub"
 
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
     /** 状态版本号，用于在异步恢复后校验数据是否已过时 */
     private val versionCounter = AtomicInteger(0)
@@ -41,6 +41,17 @@ object LyricDataHub : ActivePlayerListener {
 
     /** 当前活动的提供者信息 */
     private var providerInfo: ProviderInfo? = null
+
+    fun providerSnapshot(): String? = providerInfo?.let { io.github.proify.android.extensions.json.encodeToString(it) }
+
+    fun close() {
+        versionCounter.incrementAndGet()
+        activePipelineJob?.cancel()
+        scope.coroutineContext[Job]?.cancel()
+        listeners.clear()
+        cachedRawSong = null
+        providerInfo = null
+    }
 
     fun addListener(listener: ActivePlayerListener) {
         listeners.add(listener)
@@ -56,6 +67,7 @@ object LyricDataHub : ActivePlayerListener {
      * @param rawSong 待加工的原始歌曲
      */
     private fun runProcessingPipeline(rawSong: Song?) {
+        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
         val song = rawSong?.deepCopy()
         val currentVersion = versionCounter.incrementAndGet()
         activePipelineJob?.cancel()

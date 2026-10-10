@@ -37,4 +37,5 @@ internal class SubscriberDirectory {
     fun unregister(connection: SubscriberConnection) {
         registry.unregister(connection)
     }
+    fun closeAll() = registry.closeAll()
 }

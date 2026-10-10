@@ -19,6 +19,9 @@ import io.github.proify.lyricon.subscriber.internal.registration.CentralBootRece
 /** 创建 [LyriconSubscriber] 的工厂。 */
 object LyriconFactory {
 
+    /** Retire generation-owned registrations after destroying all providers/subscribers. */
+    fun closeForReload() = CentralBootReceiver.closeForReload()
+
     /**
      * 创建订阅端实例。
      *

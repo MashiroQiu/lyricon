@@ -24,6 +24,8 @@ import io.github.proify.lyricon.subscriber.internal.wire.json
 internal class RegistrationBinder(
     private val subscriberInfo: SubscriberInfo
 ) : ISubscriberBinder.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
 
     private val attempts = RegistrationAttempts<RegistrationAttempt>()
 

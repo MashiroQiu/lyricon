@@ -19,23 +19,28 @@ internal class FrameAnimator(
     private val requestInvalidate: () -> Unit,
     private val shouldRun: () -> Boolean,
     private val post: (Runnable) -> Unit,
+    private val removePost: (Runnable) -> Unit,
 ) : Choreographer.FrameCallback {
 
     private var running = false
     private var lastFrameNanos = 0L
 
     val isRunning: Boolean get() = running
+    private val postFrame = Runnable {
+        if (running && shouldRun()) Choreographer.getInstance().postFrameCallback(this)
+    }
 
     fun startIfNeeded() {
         if (!running && shouldRun()) {
             running = true
             lastFrameNanos = 0L
-            post { Choreographer.getInstance().postFrameCallback(this) }
+            post(postFrame)
         }
     }
 
     fun stop() {
         running = false
+        removePost(postFrame)
         Choreographer.getInstance().removeFrameCallback(this)
         lastFrameNanos = 0L
     }

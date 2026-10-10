@@ -16,6 +16,9 @@ import io.github.proify.lyricon.provider.internal.registration.CentralBootReceiv
 /** 创建 [LyriconProvider] 的工厂。 */
 object LyriconFactory {
 
+    /** Retire generation-owned registrations after destroying all providers/subscribers. */
+    fun closeForReload() = CentralBootReceiver.closeForReload()
+
     /**
      * 使用基础字段创建歌词提供端。
      *

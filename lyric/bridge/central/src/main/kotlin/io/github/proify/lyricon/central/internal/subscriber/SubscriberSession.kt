@@ -68,6 +68,7 @@ internal class SubscriberSession(
         remoteListener?.onPlaybackStateChanged(isPlaying)
     }
 
+    @Synchronized
     override fun onPositionChanged(position: Long) {
         try {
             positionBuffer?.putLong(0, position)
@@ -93,7 +94,9 @@ internal class SubscriberSession(
     }
 
     /** 释放共享内存并清空监听引用。 */
+    @Synchronized
     fun close() {
+        positionBuffer?.let { runCatching { SharedMemory.unmap(it) } }
         positionBuffer = null
         positionMemory?.close()
         positionMemory = null

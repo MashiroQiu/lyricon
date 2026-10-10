@@ -28,3 +28,7 @@
 -keepclassmembers class **.R$drawable {
     public static int sui_control_*;
 }
+# Owned Okio watchdog retirement uses its pinned idle queue fields, never shared host instances.
+-keep class okio.AsyncTimeout { *; }
+-keep class okio.AsyncTimeout$* { *; }
+-keep class okio.PriorityQueue { *; }

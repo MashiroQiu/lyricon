@@ -32,6 +32,8 @@ internal class RegistrationBinder(
     private val providerCommand: ProviderCommandStub,
     private val remoteServiceSink: RemoteServiceSink<IRemoteService?>,
 ) : IProviderBinder.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
 
     /** 等待中的注册尝试登记表。 */
     private val attempts = RegistrationAttempts<RegistrationAttempt>()

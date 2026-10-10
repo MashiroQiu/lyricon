@@ -45,6 +45,12 @@ internal class ConnectionRegistry<K, C : RemoteConnection<K>> {
         return removed
     }
 
+    fun closeAll() {
+        val snapshot = connections.values.toList()
+        connections.clear()
+        snapshot.forEach { it.close() }
+    }
+
     /** 查询连接。 */
     fun get(key: K): C? = connections[key]
 }

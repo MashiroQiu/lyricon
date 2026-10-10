@@ -37,7 +37,7 @@ object AiTranslator {
     private const val MAX_PENDING_TRANSLATIONS = 10
 
     private val cacheGeneration = AtomicInteger(0)
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob()).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     private val cache = AiTranslationCache(
         maxCacheSize = MAX_CACHE_SIZE,
         generation = cacheGeneration,
@@ -49,6 +49,15 @@ object AiTranslator {
         maxRunning = MAX_RUNNING_TRANSLATIONS,
         maxPending = MAX_PENDING_TRANSLATIONS
     )
+
+    fun beginRetirement() {
+        cacheGeneration.incrementAndGet()
+        scheduler.close()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        io.github.proify.lyricon.lyric.ai.core.AiChatClient.close()
+    }
+
+    fun finishRetirement() = cache.close()
 
     fun init(context: Context) {
         cache.init(context)

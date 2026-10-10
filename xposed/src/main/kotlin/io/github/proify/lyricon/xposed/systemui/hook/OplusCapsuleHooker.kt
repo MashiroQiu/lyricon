@@ -49,6 +49,12 @@ object OplusCapsuleHooker {
         false
     }
 
+    fun close() {
+        currentHook?.cleanup()
+        currentHook = null
+        listeners.clear()
+    }
+
     fun initialize(module: XposedModule, classLoader: ClassLoader) {
         unhookHandle?.unhook()
         currentHook?.cleanup()

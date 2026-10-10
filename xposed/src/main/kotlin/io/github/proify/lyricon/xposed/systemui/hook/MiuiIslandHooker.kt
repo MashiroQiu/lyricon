@@ -95,6 +95,11 @@ object MiuiIslandHooker {
         }
     }
 
+    fun restoreState(rect: Rect?, landscape: Boolean) {
+        currentRect = rect?.let { Rect(it) }
+        isLandscape = landscape
+    }
+
     fun registerListener(listener: IslandStateChangeListener): Boolean =
         listeners.add(listener)
 

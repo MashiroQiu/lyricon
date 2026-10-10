@@ -46,6 +46,7 @@ configure<LibraryExtension> {
 }
 
 dependencies {
+    implementation(project(":common"))
     api(project(":lyric:model"))
     api(libs.androidx.core.ktx)
     api(libs.androidx.appcompat.resources)

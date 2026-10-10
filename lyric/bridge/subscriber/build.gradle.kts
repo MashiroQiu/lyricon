@@ -41,6 +41,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":common"))
     api(project(":lyric:model"))
     api(libs.kotlinx.serialization.json)
     api(libs.androidx.core.ktx)

@@ -272,6 +272,19 @@ object LyricControlPopup : ActivePlayerListener, NotificationCoverHelper.OnCover
 
     /** 关闭控制窗口并注销监听（AI 解读界面由 App 进程管理，无需在此处理）。 */
     @JvmStatic
+    fun closeForReload() {
+        LyricDataHub.removeListener(this)
+        SystemUIMediaUtils.unregisterListener(mediaCallback)
+        NotificationCoverHelper.unregisterListener(this)
+        mainHandler.removeCallbacksAndMessages(null)
+        panel?.disposeForReload()
+        popup?.setOnDismissListener(null)
+        popup?.dismiss()
+        popup = null
+        panel = null
+        anchorView = null
+    }
+
     fun dismiss() {
         if (dismissing) return
         dismissing = true

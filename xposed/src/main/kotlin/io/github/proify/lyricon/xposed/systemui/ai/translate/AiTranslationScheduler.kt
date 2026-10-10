@@ -40,7 +40,7 @@ internal class AiTranslationScheduler(
         const val TAG = "LyriconAiTranslator"
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob()).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     private val lock = Any()
     private val jobs = ConcurrentHashMap<String, TranslationJob>()
     private val pending = ArrayDeque<TranslationJob>()
@@ -80,6 +80,12 @@ internal class AiTranslationScheduler(
         }
     }
 
+    fun close() {
+        cancelPending()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        jobs.values.forEach { it.deferred.cancel() }
+    }
+
     fun cancelPending() {
         synchronized(lock) {
             while (pending.isNotEmpty()) {
@@ -105,6 +111,7 @@ internal class AiTranslationScheduler(
     }
 
     private fun dispatchNextLocked() {
+        if (scope.coroutineContext[kotlinx.coroutines.Job]?.isActive != true) return
         while (running < maxRunning && pending.isNotEmpty()) {
             val job = pending.removeLast()
             if (job.state != TranslationJobState.PENDING) continue

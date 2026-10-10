@@ -44,9 +44,11 @@ internal class PlayerCommandStub(
     info: ProviderInfo,
     private val playerEvents: PlayerListener
 ) : IRemotePlayer.Stub(), ScreenStateMonitor.ScreenStateListener {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
 
     private val session = PlayerSession(info)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     private val closed = AtomicBoolean(false)
     private val closeMutex = Mutex()
     private val positionTracker = PlaybackStateTracker()
@@ -80,10 +82,11 @@ internal class PlayerCommandStub(
         stopPositionUpdate()
 
         songQueue.cancel()
-        scope.launch {
-            closeMutex.withLock {
-                positionMemory.close()
-                scope.cancel()
+        scope.cancel()
+        kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeout(8000) {
+                scope.coroutineContext[kotlinx.coroutines.Job]?.join()
+                closeMutex.withLock { positionMemory.close() }
             }
         }
     }

@@ -43,6 +43,12 @@ internal class AiTranslationCache(
             }
         )
 
+    fun close() {
+        dbHelper?.close()
+        dbHelper = null
+        memory.clear()
+    }
+
     fun init(context: Context) {
         if (dbHelper == null) {
             synchronized(this) {

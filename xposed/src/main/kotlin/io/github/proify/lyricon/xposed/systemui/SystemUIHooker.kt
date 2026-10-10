@@ -53,12 +53,14 @@ object SystemUIHooker : PackageHooker() {
     private const val TEST_CRASH = false
     private var isSafeMode = false
     private var isAppCreated = false
+    var restoring = false
+    private val pendingAttachments = java.util.IdentityHashMap<android.view.View, android.view.View.OnAttachStateChangeListener>()
 
     var subscriber: LyriconSubscriber? = null
         private set
 
     private val mainCoroutineScope by lazy {
-        CoroutineScope(Dispatchers.Main + SupervisorJob())
+        CoroutineScope(Dispatchers.Main + SupervisorJob()).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
     }
 
     override fun onHook() {
@@ -76,7 +78,7 @@ object SystemUIHooker : PackageHooker() {
             }
             isAppCreated = true
             YLog.info(TAG, "App created ")
-            onPreLoad()
+            if (restoring) { initCrashDataChannel(); onAppCreate() } else onPreLoad()
         }
     }
 
@@ -198,7 +200,7 @@ object SystemUIHooker : PackageHooker() {
 
         })
         mainCoroutineScope.launch {
-            delay(2000)
+            if (!restoring) delay(2000)
             subscriber.register()
         }
     }
@@ -240,16 +242,50 @@ object SystemUIHooker : PackageHooker() {
      * 将自定义控制器绑定到状态栏视图
      */
     private fun addStatusBarView(view: ViewGroup) {
-        view.doOnAttach {
-            val target = view.rootView as? ViewGroup ?: return@doOnAttach
-            val controller = StatusBarViewController(target, LyricPrefs.getLyricStyle())
-            StatusBarViewManager.add(controller)
-
-            val isFirst = StatusBarViewManager.controllers.size == 1
-            if (isFirst) {
-                if (TEST_CRASH) target.postDelayed({ error("test crash") }, 3000)
+        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
+        if (view.isAttachedToWindow) {
+            val target = view.rootView as? ViewGroup ?: return
+            if (StatusBarViewManager.controllers.none { it.statusBarView === target }) {
+                StatusBarViewManager.add(StatusBarViewController(target, LyricPrefs.getLyricStyle()))
             }
+        } else if (!pendingAttachments.containsKey(view)) {
+            val listener = object : android.view.View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: android.view.View) {
+                    v.removeOnAttachStateChangeListener(this)
+                    pendingAttachments.remove(v)
+                    addStatusBarView(view)
+                }
+                override fun onViewDetachedFromWindow(v: android.view.View) = Unit
+            }
+            pendingAttachments[view] = listener
+            view.addOnAttachStateChangeListener(listener)
         }
+    }
+
+    fun restoreViews(roots: List<ViewGroup>) { roots.forEach { addStatusBarView(it) } }
+
+    fun retireOnMain() {
+        mainCoroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        pendingAttachments.forEach { (view, listener) -> view.removeOnAttachStateChangeListener(listener) }
+        pendingAttachments.clear()
+        subscriber?.destroy()
+        subscriber = null
+        io.github.proify.lyricon.subscriber.LyriconFactory.closeForReload()
+        io.github.proify.lyricon.provider.LyriconFactory.closeForReload()
+        io.github.proify.lyricon.xposed.systemui.lyric.control.LyricControlPopup.closeForReload()
+        StatusBarViewManager.controllers.toList().forEach { StatusBarViewManager.remove(it) }
+        io.github.proify.lyricon.xposed.systemui.lyric.LyricViewController.close()
+        LyricDataHub.close()
+        LyricPrefs.close()
+        StatusBarViewResolver.close()
+        OplusCapsuleHooker.close()
+        StatusBarColorMonitor.close()
+        NotificationCoverHelper.destroy()
+        SystemUIMediaUtils.close()
+        LyriconBridge.close()
+        BridgeCentral.close()
+        ScreenStateMonitor.release()
+        StatusBarViewManager.mainHandler.removeCallbacksAndMessages(null)
     }
 
     /**

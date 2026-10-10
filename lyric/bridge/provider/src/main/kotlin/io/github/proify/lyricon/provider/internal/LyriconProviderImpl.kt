@@ -48,7 +48,7 @@ internal class LyriconProviderImpl(
     private val destroyed = AtomicBoolean(false)
 
     /** 注册超时与失败重试的协程作用域。 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
     /** 中心服务调用本地命令的 AIDL 桩。 */
     private val commandStub = ProviderCommandStub(providerService)

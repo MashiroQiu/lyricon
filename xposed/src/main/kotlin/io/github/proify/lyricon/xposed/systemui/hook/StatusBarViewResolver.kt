@@ -113,7 +113,10 @@ object StatusBarViewResolver {
         }
     }
 
+    fun close() { registry.clear() }
+
     private fun notifyAll(view: ViewGroup) {
+        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
         registry.forEach { it.invoke(view) }
     }
 }

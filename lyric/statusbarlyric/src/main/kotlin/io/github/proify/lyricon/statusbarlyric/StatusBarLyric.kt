@@ -388,7 +388,7 @@ class StatusBarLyric(
 
         if (enableEnterAnim && shouldShow && !lastDisabledVisible) {
             isVisible = shouldShow
-            postDelayed({
+            mainHandler.postDelayed({
                 triggerSingleVisibilityLayoutTransition()
                 logoView.forceHide = false
             }, 0)
@@ -638,13 +638,24 @@ class StatusBarLyric(
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalLayoutListener(cameraLayoutListener)
         // 延迟一帧读取，确保 View 树第一次 layout 已完成，坐标稳定
-        post {
+        mainHandler.post {
             val loc = IntArray(2)
             (parent as? View)?.getLocationOnScreen(loc)
             cachedContainerScreenLeft = loc[0]
             Log.d(TAG, "onAttachedToWindow: cachedContainerScreenLeft=$cachedContainerScreenLeft")
             updateWidthInternal(currentStyle)
         }
+    }
+
+    fun disposeForReload() {
+        mainHandler.removeCallbacksAndMessages(null)
+        animate().setListener(null)
+        animate().cancel()
+        textView.animate().setListener(null)
+        textView.animate().cancel()
+        logoView.animate().setListener(null)
+        logoView.animate().cancel()
+        logoView.clearProgress()
     }
 
     override fun onDetachedFromWindow() {

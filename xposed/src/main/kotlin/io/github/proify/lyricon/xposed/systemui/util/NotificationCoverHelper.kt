@@ -68,7 +68,7 @@ object NotificationCoverHelper {
     private val initialized = AtomicBoolean(false)
 
     /** 协程作用域，用于异步执行文件 IO 操作 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
     /** 按包名管理各自的封面写入器，线程安全 */
     private val sessionWriters = ConcurrentHashMap<String, SessionCoverWriter>()
@@ -145,6 +145,7 @@ object NotificationCoverHelper {
      * 通常在 Xposed 模块卸载或宿主进程终止时调用。
      */
     fun destroy() {
+        updateListeners.clear()
         scope.cancel()
         sessionWriters.clear()
     }

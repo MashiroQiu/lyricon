@@ -108,6 +108,18 @@ object StatusBarColorMonitor {
      * @param module Xposed 模块实例
      * @param classLoader 用于加载目标类的类加载器
      */
+    fun close() {
+        activeStrategy?.onBindClockView(null)
+        activeStrategy?.onBindStatusBar(null)
+        activeStrategy?.onDeactivate()
+        activeStrategy = null
+        listeners.clear()
+        clockView = null
+        statusBarRoot = null
+        module = null
+        classLoader = null
+    }
+
     fun initialize(module: XposedModule, classLoader: ClassLoader) {
         if (initialized) return
         initialized = true
@@ -190,6 +202,7 @@ object StatusBarColorMonitor {
      * 目标 ID 未注册(未来偏好残留)时回退到精准模式。
      */
     private fun syncStrategy() {
+        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
         val targetId = runCatching { LyricPrefs.baseStyle.statusColorStrategy }
             .getOrDefault(BasicStyle.Defaults.STATUS_COLOR_STRATEGY)
 

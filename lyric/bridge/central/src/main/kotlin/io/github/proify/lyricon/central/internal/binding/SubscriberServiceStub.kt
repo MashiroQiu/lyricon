@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class SubscriberServiceStub(
     private var connection: SubscriberConnection?
 ) : IRemoteService.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
+
 
     private val closed = AtomicBoolean(false)
     private val subscription = SubscriberSession(connection!!.subscriberInfo)

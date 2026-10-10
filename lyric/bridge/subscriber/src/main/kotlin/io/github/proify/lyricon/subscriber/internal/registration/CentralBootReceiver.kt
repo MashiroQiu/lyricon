@@ -23,6 +23,7 @@ internal object CentralBootReceiver {
     var isInitialized = false
         private set
 
+    private var registeredContext: Context? = null
     private val listeners = CopyOnWriteArraySet<BootListener>()
 
     /** 内部广播处理器，过滤并分发中央服务启动完成的广播。 */
@@ -62,8 +63,18 @@ internal object CentralBootReceiver {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
+            registeredContext = context.applicationContext
             isInitialized = true
         }
+    }
+
+    /** Used after all clients are destroyed, so the host cannot retain the old module receiver. */
+    @Synchronized
+    fun closeForReload() {
+        registeredContext?.unregisterReceiver(innerReceiver)
+        registeredContext = null
+        isInitialized = false
+        listeners.clear()
     }
 
     /** 遍历并回调所有已注册监听器的启动完成事件。 */

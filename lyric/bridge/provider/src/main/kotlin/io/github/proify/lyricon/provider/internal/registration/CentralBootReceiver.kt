@@ -27,6 +27,7 @@ internal object CentralBootReceiver {
         private set
 
     /** 启动完成事件监听器集合。 */
+    private var registeredContext: Context? = null
     private val listeners = CopyOnWriteArraySet<BootListener>()
 
     /**
@@ -70,8 +71,18 @@ internal object CentralBootReceiver {
                 filter,
                 ContextCompat.RECEIVER_EXPORTED
             )
+            registeredContext = context.applicationContext
             isInitialized = true
         }
+    }
+
+    /** Used after all clients are destroyed, so the host cannot retain the old module receiver. */
+    @Synchronized
+    fun closeForReload() {
+        registeredContext?.unregisterReceiver(innerReceiver)
+        registeredContext = null
+        isInitialized = false
+        listeners.clear()
     }
 
     /**

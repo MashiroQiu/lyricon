@@ -288,6 +288,15 @@ class LyricControlPanel(context: Context) : FrameLayout(context) {
 
     /** 正在进行的弹簧回弹动画，用于快速触摸时取消。 */
     private var springAnimator: ValueAnimator? = null
+    fun disposeForReload() {
+        titleView.disposeForReload()
+        springAnimator?.cancel()
+        springAnimator = null
+        card.animate().setListener(null)
+        card.animate().cancel()
+        animate().setListener(null)
+        animate().cancel()
+    }
 
     /**
      * 标准 ViewGroup 事件分发，在子视图分发前处理卡片触摸效果。

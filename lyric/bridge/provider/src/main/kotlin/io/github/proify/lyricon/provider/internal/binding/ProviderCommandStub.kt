@@ -18,6 +18,7 @@ import io.github.proify.lyricon.provider.ProviderService
  */
 internal class ProviderCommandStub(handler: ProviderService? = null) :
     IProviderService.Stub() {
+    override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
 
     /** 当前命令处理回调，可为 null（此时命令返回空结果）。 */
     var handler: ProviderService? = handler

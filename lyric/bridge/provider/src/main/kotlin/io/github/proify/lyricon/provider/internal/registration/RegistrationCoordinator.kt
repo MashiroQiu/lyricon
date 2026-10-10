@@ -104,8 +104,11 @@ internal class RegistrationCoordinator(
     }
 
     override fun onBootCompleted() {
-        // 中心服务重启：只要提供端仍期望连接且当前未在连接中，就补一次注册。
-        if (wantsConnection && connection.connectionStatus.isDisconnected()) {
+        // Hot reload keeps framework Binders alive; the boot broadcast is authoritative.
+        if (wantsConnection) {
+            cancelTimeout()
+            registrationBinder.endAttempt(attempt)
+            connection.onCentralRestart()
             start()
         }
     }

@@ -35,6 +35,7 @@ configure<LibraryExtension> {
 }
 
 dependencies {
+    implementation(project(":common"))
     api(project(":lyric:bridge:provider"))
     api(project(":lyric:bridge:subscriber"))
 
