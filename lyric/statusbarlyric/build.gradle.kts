@@ -42,6 +42,7 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
+    testImplementation("org.mockito:mockito-core:5.18.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

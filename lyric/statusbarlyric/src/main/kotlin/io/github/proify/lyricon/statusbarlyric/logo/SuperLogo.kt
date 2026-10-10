@@ -84,6 +84,13 @@ class SuperLogo(context: Context) : ImageView(context) {
         }
 
     var activePackage: String? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            // The provider logo can remain null (or unchanged) when players switch.
+            // Refresh application icons independently of provider-logo notifications.
+            if (strategy is AppLogoStrategy) strategy?.updateContent()
+        }
 
     init {
         this.tag = VIEW_TAG

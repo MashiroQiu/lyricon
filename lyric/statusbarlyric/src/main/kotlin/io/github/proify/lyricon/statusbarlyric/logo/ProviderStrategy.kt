@@ -55,7 +55,7 @@ class ProviderStrategy(
 
     override fun onAttach() {
         // 如果在 detach 期间清理了 Bitmap，这里可以尝试重新加载
-        if (view.drawable == null && isEffective) {
+        if (view.drawable == null) {
             updateContent()
         }
     }

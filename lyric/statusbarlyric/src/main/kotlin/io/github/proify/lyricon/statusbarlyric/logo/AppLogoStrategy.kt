@@ -53,7 +53,7 @@ class AppLogoStrategy(
     }
 
     override fun onAttach() {
-        if (view.drawable == null) updateContent()
+        updateContent()
     }
 
     override fun onDetach() {
