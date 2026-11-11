@@ -20,18 +20,32 @@ internal class FrameAnimator(
     private val shouldRun: () -> Boolean,
     private val post: (Runnable) -> Unit,
     private val removePost: (Runnable) -> Unit,
+    private val scheduleFrame: (Choreographer.FrameCallback, Long) -> Unit = { callback, delay ->
+        Choreographer.getInstance().postFrameCallbackDelayed(callback, delay)
+    },
+    private val cancelFrame: (Choreographer.FrameCallback) -> Unit = { callback ->
+        Choreographer.getInstance().removeFrameCallback(callback)
+    },
 ) : Choreographer.FrameCallback {
 
+    private companion object {
+        // Tiny status-bar text does not need to redraw at the display's 90/120 Hz rate.
+        const val FRAME_INTERVAL_NANOS = 33_333_333L
+        const val VSYNC_TOLERANCE_NANOS = 500_000L
+    }
+
+    private var generation = 0L
     private var running = false
     private var lastFrameNanos = 0L
 
     val isRunning: Boolean get() = running
     private val postFrame = Runnable {
-        if (running && shouldRun()) Choreographer.getInstance().postFrameCallback(this)
+        if (running && shouldRun()) scheduleFrame(this, 0L) else stop()
     }
 
     fun startIfNeeded() {
         if (!running && shouldRun()) {
+            generation++
             running = true
             lastFrameNanos = 0L
             post(postFrame)
@@ -39,25 +53,36 @@ internal class FrameAnimator(
     }
 
     fun stop() {
+        generation++
         running = false
         removePost(postFrame)
-        Choreographer.getInstance().removeFrameCallback(this)
+        cancelFrame(this)
         lastFrameNanos = 0L
     }
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running || !shouldRun()) {
-            running = false
+            stop()
             return
         }
 
-        val deltaNanos = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
+        val elapsed = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
+        if (lastFrameNanos != 0L && elapsed < FRAME_INTERVAL_NANOS - VSYNC_TOLERANCE_NANOS) {
+            scheduleFrame(this, ((FRAME_INTERVAL_NANOS - elapsed) / 1_000_000L - 1).coerceAtLeast(0))
+            return
+        }
         lastFrameNanos = frameTimeNanos
+        val frameGeneration = generation
+        val changed = onFrame(elapsed)
+        // A listener may replace the lyric/stop and restart while the renderer steps.
+        if (frameGeneration != generation) return
+        if (changed) requestInvalidate()
 
-        if (onFrame(deltaNanos)) requestInvalidate()
-
-        if (running) {
-            Choreographer.getInstance().postFrameCallback(this)
+        if (running && shouldRun()) {
+            // Leave the next vsync to Android; preserve real elapsed time for scroll/highlight.
+            scheduleFrame(this, FRAME_INTERVAL_NANOS / 1_000_000L - 1)
+        } else {
+            stop()
         }
     }
 }

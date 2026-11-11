@@ -11,6 +11,7 @@ import android.text.TextPaint
 import io.github.proify.lyricon.lyric.view.line.model.LyricModel
 
 internal interface LineRenderer {
+    val needsAnimationFrame: Boolean get() = isPlaying
     val isPlaying: Boolean
     val isFinished: Boolean
     val isStarted: Boolean

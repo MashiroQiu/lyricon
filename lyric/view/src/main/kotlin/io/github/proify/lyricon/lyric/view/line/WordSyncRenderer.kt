@@ -69,6 +69,10 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
      */
     private var silentExtrapolationMs = 0L
 
+    override val needsAnimationFrame get() = progressAnimator.isAnimating ||
+        (isCharMotionEnabled && !isScrollOnly && isStarted && !isFinished &&
+            silentExtrapolationMs < MAX_SILENT_EXTRAPOLATION_MS)
+
     override val isPlaying get() = progressAnimator.isAnimating
     override val isFinished get() = progressAnimator.hasFinished
     override val isStarted get() = progressAnimator.hasStarted
@@ -165,7 +169,8 @@ internal class WordSyncRenderer(private val view: LyricLineView) : LineRenderer 
 
         // 词间隙：行仍在播放窗口内时继续外推特效时钟，消除动画冻结；
         // 超过上限视为外部暂停（如用户暂停播放），停止推进以定格特效。
-        if (isStarted && !isFinished && silentExtrapolationMs < MAX_SILENT_EXTRAPOLATION_MS) {
+        if (isCharMotionEnabled && !isScrollOnly && isStarted && !isFinished &&
+            silentExtrapolationMs < MAX_SILENT_EXTRAPOLATION_MS) {
             silentExtrapolationMs += deltaNanos / 1_000_000L
             advancePlaybackClock(deltaNanos)
             return true

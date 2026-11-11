@@ -134,7 +134,7 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
             activeRenderer.step(deltaNanos, _model, lineState, measuredWidth)
         },
         requestInvalidate = { postInvalidateOnAnimation() },
-        shouldRun = { isAttachedToWindow },
+        shouldRun = { isAttachedToWindow && isShown && windowVisibility == VISIBLE && activeRenderer.needsAnimationFrame },
         post = { runnable -> post(runnable) },
         removePost = { runnable -> removeCallbacks(runnable) },
     )
@@ -156,6 +156,22 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     private var ghostSpacing: Float = 40f.dp
     private var scrollStarted = false
     private var scrollUnlocked = false
+
+    private var viewInitialized = true
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (viewInitialized) {
+            if (isShown) animator.startIfNeeded() else animator.stop()
+        }
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (viewInitialized) {
+            if (visibility == VISIBLE) animator.startIfNeeded() else animator.stop()
+        }
+    }
 
     val textSize: Float get() = textPaint.textSize
 
@@ -351,6 +367,11 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         val charMotionPadding = 0
         val textHeight = (textPaint.descent() - textPaint.ascent()).toInt() + charMotionPadding
         setMeasuredDimension(w, resolveSize(textHeight, hSpec))
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        animator.startIfNeeded()
     }
 
     override fun onDetachedFromWindow() {
