@@ -12,6 +12,7 @@ import io.github.proify.lyricon.lyric.view.line.model.LyricModel
 
 internal interface LineRenderer {
     val needsAnimationFrame: Boolean get() = isPlaying
+    val nextFrameDelayMillis: Long get() = 0L
     val isPlaying: Boolean
     val isFinished: Boolean
     val isStarted: Boolean

@@ -22,7 +22,8 @@ object YoYoAnimation {
         action: (T) -> Unit
     ) {
         cancelAnimation(target)
-        target.setTag(KEY_ANIM_LOCK, true)
+        val owner = Any()
+        target.setTag(KEY_ANIM_LOCK, owner)
 
         val outHandle = YoYo.with(outConfig.technique)
             .duration(outConfig.duration)
@@ -31,14 +32,19 @@ object YoYoAnimation {
                 override fun onAnimationStart(p0: Animator) {}
                 override fun onAnimationRepeat(p0: Animator) {}
                 override fun onAnimationCancel(p0: Animator) {
-                    target.setTag(KEY_ANIM_LOCK, false)
+                    if (target.getTag(KEY_ANIM_LOCK) === owner) {
+                        target.setTag(KEY_ANIM_LOCK, null)
+                    }
                 }
 
                 override fun onAnimationEnd(p0: Animator) {
-                    if (target.getTag(KEY_ANIM_LOCK) != true) return
+                    if (target.getTag(KEY_ANIM_LOCK) !== owner) return
 
                     // 执行内容更新
                     action(target)
+                    if (target.getTag(KEY_ANIM_LOCK) !== owner) return
+                    val incomingOwner = Any()
+                    target.setTag(KEY_ANIM_LOCK, incomingOwner)
 
                     val inHandle = YoYo.with(inConfig.technique)
                         .duration(inConfig.duration)
@@ -47,29 +53,37 @@ object YoYoAnimation {
                             override fun onAnimationStart(p0: Animator) {}
                             override fun onAnimationRepeat(p0: Animator) {}
                             override fun onAnimationCancel(p0: Animator) {
-                                target.setTag(KEY_ANIM_LOCK, false)
+                                if (target.getTag(KEY_ANIM_LOCK) === incomingOwner) {
+                                    target.setTag(KEY_ANIM_LOCK, null)
+                                }
                             }
 
                             override fun onAnimationEnd(p0: Animator) {
-                                target.setTag(KEY_ANIM_LOCK, false)
-                                target.setTag(KEY_ANIM_HANDLE, null)
+                                if (target.getTag(KEY_ANIM_LOCK) === incomingOwner) {
+                                    target.setTag(KEY_ANIM_LOCK, null)
+                                    target.setTag(KEY_ANIM_HANDLE, null)
+                                }
                             }
                         })
                         .playOn(target)
 
-                    target.setTag(KEY_ANIM_HANDLE, inHandle)
+                    if (target.getTag(KEY_ANIM_LOCK) === incomingOwner) {
+                        target.setTag(KEY_ANIM_HANDLE, inHandle)
+                    }
                 }
             })
             .playOn(target)
 
-        target.setTag(KEY_ANIM_HANDLE, outHandle)
+        if (target.getTag(KEY_ANIM_LOCK) === owner) {
+            target.setTag(KEY_ANIM_HANDLE, outHandle)
+        }
     }
 
     fun cancelAnimation(target: View) {
         val handle = target.getTag(KEY_ANIM_HANDLE) as? YoYo.YoYoString
-        handle?.stop(true)
         target.setTag(KEY_ANIM_HANDLE, null)
-        target.setTag(KEY_ANIM_LOCK, false)
+        target.setTag(KEY_ANIM_LOCK, null)
+        handle?.stop(true)
     }
 }
 

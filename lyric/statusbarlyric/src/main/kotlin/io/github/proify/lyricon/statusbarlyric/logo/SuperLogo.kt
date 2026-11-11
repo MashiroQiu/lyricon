@@ -122,7 +122,7 @@ class SuperLogo(context: Context) : ImageView(context) {
         this.progress = startProgress
         invalidate()
 
-        if (current < duration) {
+        if (current < duration && isAttachedToWindow && isShown && windowVisibility == VISIBLE) {
             progressAnimator = ValueAnimator.ofFloat(startProgress, 1f).apply {
                 this.duration = duration - current
                 interpolator = LinearInterpolator()
@@ -162,6 +162,8 @@ class SuperLogo(context: Context) : ImageView(context) {
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        progressAnimator?.cancel()
+        progressAnimator = null
         // 暂停策略活动（如停止动画、释放临时资源）
         strategy?.onDetach()
     }
@@ -185,7 +187,7 @@ class SuperLogo(context: Context) : ImageView(context) {
     }
 
     private fun handleVisibilityChange(visibility: Int) {
-        val visible = visibility == VISIBLE && isShown
+        val visible = visibility == VISIBLE && isShown && windowVisibility == VISIBLE
         strategy?.onVisibilityChanged(visible)
 
         if (!visible) {
@@ -213,6 +215,7 @@ class SuperLogo(context: Context) : ImageView(context) {
      * 包括：旋转角度、OutlineProvider、ColorFilter (Tint)。
      */
     private fun resetViewAttributes() {
+        clearProgress()
         this.rotation = 0f
         this.outlineProvider = null
         this.clipToOutline = false

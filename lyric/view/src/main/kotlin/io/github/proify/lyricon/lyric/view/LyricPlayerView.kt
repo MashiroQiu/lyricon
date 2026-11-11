@@ -22,6 +22,7 @@ import io.github.proify.lyricon.lyric.model.interfaces.IRichLyricLine
 import io.github.proify.lyricon.lyric.view.line.LyricLineView
 import io.github.proify.lyricon.lyric.view.yoyo.AnimSpeed
 import io.github.proify.lyricon.lyric.view.yoyo.YoYoPresets
+import io.github.proify.lyricon.lyric.view.yoyo.YoYoAnimation
 import io.github.proify.lyricon.lyric.view.yoyo.animateUpdate
 import java.util.concurrent.CopyOnWriteArraySet
 
@@ -181,6 +182,7 @@ open class LyricPlayerView(
     fun setPosition(position: Long) = updatePosition(position)
 
     fun reset() {
+        YoYoAnimation.cancelAnimation(this)
         removeAllViews()
         activeLines.clear()
         currentInterlude = null
@@ -282,7 +284,6 @@ open class LyricPlayerView(
         if (children.isEmpty()) return
 
         ViewVisibilityPolicy.apply(ViewVisibilityPolicy.Input(children, style))
-        invalidate()
     }
 
     private fun checkInterlude(position: Long, matches: List<TimedLine>) {
@@ -351,7 +352,7 @@ open class LyricPlayerView(
 
     private fun updateLayoutTransitionHandler(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
         layoutTransitionHandler =
-            LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+            LayoutTransitionX(config).apply { setAnimateParentHierarchy(false) }
         layoutTransition = null
     }
 

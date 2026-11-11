@@ -21,6 +21,7 @@ internal class FrameAnimator(
     private val post: (Runnable) -> Unit,
     private val removePost: (Runnable) -> Unit,
     private val frameIntervalNanos: Long = 0L,
+    private val nextFrameDelayMillis: () -> Long = { 0L },
     private val scheduleFrame: (Choreographer.FrameCallback, Long) -> Unit = { callback, delay ->
         Choreographer.getInstance().postFrameCallbackDelayed(callback, delay)
     },
@@ -79,7 +80,10 @@ internal class FrameAnimator(
 
         if (running && shouldRun()) {
             // Leave the next vsync to Android; preserve real elapsed time for scroll/highlight.
-            scheduleFrame(this, (frameIntervalNanos / 1_000_000L - 1).coerceAtLeast(0))
+            scheduleFrame(this, maxOf(
+                (frameIntervalNanos / 1_000_000L - 1).coerceAtLeast(0),
+                nextFrameDelayMillis().coerceAtLeast(0),
+            ))
         } else {
             stop()
         }

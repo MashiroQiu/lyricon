@@ -219,6 +219,6 @@ class RichLyricLineView(
     }
 
     private fun updateLayoutTransitionX(config: String? = LayoutTransitionX.TRANSITION_CONFIG_SMOOTH) {
-        layoutTransition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(true) }
+        layoutTransition = LayoutTransitionX(config).apply { setAnimateParentHierarchy(false) }
     }
 }

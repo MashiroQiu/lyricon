@@ -33,6 +33,8 @@ internal class ScrollTextRenderer : LineRenderer {
     override val isPlaying get() = isRunning || isPendingDelay
     override val isFinished get() = finished
     override val isStarted get() = true
+    override val nextFrameDelayMillis: Long
+        get() = if (isPendingDelay) (delayRemainingNanos + 999_999L) / 1_000_000L else 0L
 
     val scrollProgress get() = currentUnitOffset
 

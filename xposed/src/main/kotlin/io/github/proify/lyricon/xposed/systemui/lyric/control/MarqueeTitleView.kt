@@ -95,6 +95,7 @@ internal class MarqueeTitleView(context: Context) : View(context) {
 
     private var delayRemainingMs = 0L
     private var frameAt = 0L
+    private var initialized = true
     private val delayedStart = Runnable { start() }
 
     private val ghostSpacing = GHOST_SPACING_DP.dp.toFloat()
@@ -128,6 +129,20 @@ internal class MarqueeTitleView(context: Context) : View(context) {
     override fun onDetachedFromWindow() {
         disposeForReload()
         super.onDetachedFromWindow()
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (initialized) {
+            if (isShown && windowVisibility == VISIBLE) start() else disposeForReload()
+        }
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (initialized) {
+            if (visibility == VISIBLE && isShown) start() else disposeForReload()
+        }
     }
 
     fun disposeForReload() {
@@ -186,7 +201,7 @@ internal class MarqueeTitleView(context: Context) : View(context) {
 
     /** 文本超宽且已挂载时启动滚动帧循环（已在跑或宽度未知则不重复）。 */
     private fun start() {
-        if (!isAttachedToWindow) return
+        if (!isAttachedToWindow || !isShown || windowVisibility != VISIBLE) return
         if (width < 1) return
         if (textWidth <= width + 0.5f) {
             resetState()
@@ -196,7 +211,7 @@ internal class MarqueeTitleView(context: Context) : View(context) {
         if (isRunning || isPendingDelay) return
         scheduleDelay(START_DELAY_MS)
         frameAt = SystemClock.uptimeMillis()
-        postOnAnimationDelayed(tick, FRAME_DELAY_MS)
+        postDelayed(tick, delayRemainingMs)
         invalidate()
     }
 
@@ -221,7 +236,7 @@ internal class MarqueeTitleView(context: Context) : View(context) {
     /** 每帧推进滚动偏移；文本不再超宽时退出帧循环（零后台开销）。 */
     private val tick = object : Runnable {
         override fun run() {
-            if (!isAttachedToWindow) {
+            if (!isAttachedToWindow || !isShown || windowVisibility != VISIBLE) {
                 resetState()
                 return
             }
@@ -232,11 +247,12 @@ internal class MarqueeTitleView(context: Context) : View(context) {
                 return
             }
             val now = SystemClock.uptimeMillis()
-            val deltaMs = (now - frameAt).coerceIn(0L, MAX_FRAME_DELTA_MS)
+            val elapsedMs = (now - frameAt).coerceAtLeast(0L)
+            val deltaMs = elapsedMs.coerceAtMost(MAX_FRAME_DELTA_MS)
             frameAt = now
 
             if (isPendingDelay) {
-                delayRemainingMs -= deltaMs
+                delayRemainingMs -= elapsedMs
                 if (delayRemainingMs <= 0) {
                     isPendingDelay = false
                     isRunning = true
@@ -251,7 +267,8 @@ internal class MarqueeTitleView(context: Context) : View(context) {
                 }
                 invalidate()
             }
-            postOnAnimationDelayed(this, FRAME_DELAY_MS)
+            if (isPendingDelay) postDelayed(this, delayRemainingMs)
+            else postOnAnimationDelayed(this, FRAME_DELAY_MS)
         }
     }
 

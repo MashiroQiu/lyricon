@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
     testImplementation("org.mockito:mockito-core:5.18.0")
+    testImplementation("com.daimajia.androidanimations:library:2.4@aar")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

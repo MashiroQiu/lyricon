@@ -10,6 +10,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ComposeShader
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.Shader
@@ -23,8 +24,6 @@ import io.github.proify.lyricon.lyric.view.line.effect.SCALE_OVERFLOW_FRACTION
 import io.github.proify.lyricon.lyric.view.line.effect.UnitTransform
 import io.github.proify.lyricon.lyric.view.line.model.EmphasisGroup
 import io.github.proify.lyricon.lyric.view.line.model.LyricModel
-import kotlin.math.abs
-import kotlin.math.max
 
 internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     private var bgColors = intArrayOf(Color.GRAY)
@@ -45,7 +44,8 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     private var composedBase: Shader? = null
     private var composedMask: Shader? = null
     private var cachedAlphaMaskShader: LinearGradient? = null
-    private var lastHighlightWidth = -1f
+    private val alphaMaskMatrix = Matrix()
+    private var alphaMaskGeometry = HighlightFade()
     private var cachedSolidShader: LinearGradient? = null
     private var lastSolidWidth = -1f
     private var lastSolidColor = 0
@@ -71,7 +71,7 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
         composedBase = null
         composedMask = null
         cachedAlphaMaskShader = null
-        lastHighlightWidth = -1f
+        alphaMaskGeometry = HighlightFade()
         cachedSolidShader = null
         lastSolidWidth = -1f
     }
@@ -403,15 +403,17 @@ internal class TextDrawer(private val effectEngine: LyricEffectEngine) {
     }
 
     private fun getOrCreateAlphaMaskShader(totalWidth: Float, highlightWidth: Float): Shader {
-        val edgePosition = max(highlightWidth / totalWidth, 0.9f)
-        if (cachedAlphaMaskShader == null || abs(lastHighlightWidth - highlightWidth) > 0.1f) {
+        if (cachedAlphaMaskShader == null) {
             cachedAlphaMaskShader = LinearGradient(
-                0f, 0f, highlightWidth, 0f,
-                intArrayOf(Color.BLACK, Color.BLACK, Color.TRANSPARENT),
-                floatArrayOf(0f, edgePosition, 1f),
+                0f, 0f, 1f, 0f,
+                Color.BLACK, Color.TRANSPARENT,
                 Shader.TileMode.CLAMP
             )
-            lastHighlightWidth = highlightWidth
+        }
+        if (alphaMaskGeometry.update(totalWidth, highlightWidth)) {
+            alphaMaskMatrix.setScale(alphaMaskGeometry.width, 1f)
+            alphaMaskMatrix.postTranslate(alphaMaskGeometry.start, 0f)
+            cachedAlphaMaskShader!!.setLocalMatrix(alphaMaskMatrix)
         }
         return cachedAlphaMaskShader!!
     }

@@ -4,6 +4,34 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FrameAnimatorTest {
+    @Test fun scrollWaitSleepsUntilTheDeadlineWithoutChangingNativeAnimationCadence() {
+        var waiting = true
+        var requestedDelay = -1L
+        var elapsed = 0L
+        var draws = 0
+        val animator = FrameAnimator(
+            onFrame = { delta ->
+                elapsed += delta
+                if (delta >= 800_000_000L) waiting = false
+                !waiting
+            },
+            requestInvalidate = { draws++ },
+            shouldRun = { true },
+            post = { it.run() },
+            removePost = {},
+            nextFrameDelayMillis = { if (waiting) 800L else 0L },
+            scheduleFrame = { _, delay -> requestedDelay = delay },
+            cancelFrame = {},
+        )
+        animator.startIfNeeded()
+        animator.doFrame(1_000_000_000L)
+        assertEquals(800L, requestedDelay)
+        assertEquals(0, draws)
+        animator.doFrame(1_800_000_000L)
+        assertEquals(800_000_000L, elapsed)
+        assertEquals(0L, requestedDelay)
+        assertEquals(1, draws)
+    }
     private class Harness {
         var visible = true
         var animating = true

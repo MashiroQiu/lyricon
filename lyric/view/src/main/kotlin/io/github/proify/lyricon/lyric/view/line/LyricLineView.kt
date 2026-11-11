@@ -8,6 +8,7 @@ package io.github.proify.lyricon.lyric.view.line
 
 import android.content.Context
 import android.graphics.Canvas
+import android.os.Trace
 import android.text.TextPaint
 import android.util.AttributeSet
 import android.view.View
@@ -133,10 +134,11 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
         onFrame = { deltaNanos ->
             activeRenderer.step(deltaNanos, _model, lineState, measuredWidth)
         },
-        requestInvalidate = { postInvalidateOnAnimation() },
+        requestInvalidate = { invalidate() },
         shouldRun = { isAttachedToWindow && isShown && windowVisibility == VISIBLE && activeRenderer.needsAnimationFrame },
         post = { runnable -> post(runnable) },
         removePost = { runnable -> removeCallbacks(runnable) },
+        nextFrameDelayMillis = { activeRenderer.nextFrameDelayMillis },
     )
 
     private val scrollStart = Runnable {
@@ -310,7 +312,12 @@ open class LyricLineView(context: Context, attrs: AttributeSet? = null) :
     }
 
     override fun onDraw(canvas: Canvas) {
-        activeRenderer.draw(canvas, _model, textPaint, lineState, measuredWidth, measuredHeight)
+        Trace.beginSection(if (isWordSync) "Lyricon.wordDraw" else "Lyricon.scrollDraw")
+        try {
+            activeRenderer.draw(canvas, _model, textPaint, lineState, measuredWidth, measuredHeight)
+        } finally {
+            Trace.endSection()
+        }
     }
 
     override fun getLeftFadingEdgeStrength(): Float {
