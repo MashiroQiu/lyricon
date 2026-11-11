@@ -15,3 +15,11 @@ Validation: 7 JUnit scheduler regressions pass, including synthetic 120 Hz vsync
 Upstream: tomakino/lyricon master c93da0e and TTXXXY/lyricon master ecd34fc are already ancestors of our branch; no new upstream commits to merge.
 
 Phone comparison: use the same song/lyric effects, display refresh rate and screen, wait past transitions, compare CPU over at least 30 seconds. Capture a SystemUI Perfetto trace if RenderThread remains high. Screen-off/hidden text should have no scheduled lyric animation frames; verify reappearance, marquee delays, seeks, translations and next-line transitions.
+
+## Paired integration adjustment
+
+The paired build preserves the original display refresh cadence: FrameAnimator's default frame interval is zero (native vsync). The 30 FPS path is retained only as an injected scheduler option exercised by tests; it is not applied to production views. Idle/hidden/finished frames still stop, and immutable background/highlight/composition shaders are reused without changing gradient/effect formulas.
+
+The new background patch synchronously registers/cancels PositionTicker jobs so a queued start cannot run after stop. Subscriber shared-memory reads now require active playback, screen-on, a mapped buffer and listeners; release removes the screen receiver and waits for reader completion before unmapping. Initial screen state is read from PowerManager, including module initialization while the screen is already off. Three queue-order/cancellation tests cover start/stop/restart races.
+
+Full Android validation: 117 relevant JVM tests and the Xposed module compilation pass; signed debug and unminified release variants build. Native visibility delivery, graphics equivalence, power savings and real hot reload still require phone checks. The APK uses a new test certificate; see the paired SuperLyric installation notes before replacing the old app. A new private signing keystore is kept outside Git.

@@ -63,6 +63,9 @@ internal object ScreenStateMonitor {
     fun initialize(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
+        state = if (context.getSystemService(android.os.PowerManager::class.java)?.isInteractive == true) {
+            ScreenState.ON
+        } else ScreenState.OFF
         registerReceiver()
     }
 

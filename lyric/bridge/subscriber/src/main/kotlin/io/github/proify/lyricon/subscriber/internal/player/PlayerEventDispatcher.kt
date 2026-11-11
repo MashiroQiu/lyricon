@@ -34,27 +34,49 @@ import java.util.concurrent.CopyOnWriteArraySet
  * 单个监听器抛出的异常会被隔离并记录，不影响其他监听器与 AIDL 回调事务。
  */
 @RequiresApi(Build.VERSION_CODES.O_MR1)
-internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
+internal class PlayerEventDispatcher(context: android.content.Context) : IActivePlayerListener.Stub() {
     override fun asBinder(): android.os.IBinder = io.github.proify.lyricon.common.util.ReloadableBinders.wrap(this)
 
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
+    private val appContext = context.applicationContext
+    private val pollLock = Any()
+    private var playing = false
+    private var destroyed = false
+    private var interactive = appContext.getSystemService(android.os.PowerManager::class.java)?.isInteractive == true
+    private val screenReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            synchronized(pollLock) {
+                interactive = intent?.action == android.content.Intent.ACTION_SCREEN_ON
+                restartPositionPoll()
+            }
+        }
+    }
+    init {
+        androidx.core.content.ContextCompat.registerReceiver(appContext, screenReceiver,
+            android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_SCREEN_ON); addAction(android.content.Intent.ACTION_SCREEN_OFF)
+            }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
     private var positionMemory: SharedMemory? = null
     private var positionBuffer: ByteBuffer? = null
     private var positionJob: Job? = null
 
     /** 注册本地活跃播放器监听器。 */
-    fun registerActivePlayerListener(listener: ActivePlayerListener): Boolean =
-        listeners.add(listener)
+    fun registerActivePlayerListener(listener: ActivePlayerListener): Boolean = synchronized(pollLock) {
+        listeners.add(listener).also { restartPositionPoll() }
+    }
 
     /** 移除本地活跃播放器监听器。 */
-    fun unregisterActivePlayerListener(listener: ActivePlayerListener): Boolean =
-        listeners.remove(listener)
+    fun unregisterActivePlayerListener(listener: ActivePlayerListener): Boolean = synchronized(pollLock) {
+        listeners.remove(listener).also { restartPositionPoll() }
+    }
 
     /** 更新远端提供的播放进度共享内存；null 表示停止位置轮询。 */
-    fun setPositionSharedMemory(memory: SharedMemory?) {
+    fun setPositionSharedMemory(memory: SharedMemory?) = synchronized(pollLock) {
         detachPositionMemory()
-        if (memory == null) return
+        if (destroyed) { memory?.close(); return@synchronized }
+        if (memory == null) return@synchronized
 
         positionMemory = memory
         positionBuffer = try {
@@ -70,6 +92,7 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
 
     override fun onActiveProviderChanged(providerInfo: ByteArray?) {
         val info = providerInfo?.takeIf { it.isNotEmpty() }?.decode<ProviderInfo>()
+        if (info == null) synchronized(pollLock) { playing = false; restartPositionPoll() }
         dispatch { it.onActiveProviderChanged(info) }
     }
 
@@ -79,6 +102,7 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
     }
 
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        synchronized(pollLock) { playing = isPlaying; restartPositionPoll() }
         dispatch { it.onPlaybackStateChanged(isPlaying) }
     }
 
@@ -101,9 +125,11 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
     /**
      * 释放共享内存；[clearListeners] 为 true 时同时结束调度器生命周期。
      */
-    fun release(clearListeners: Boolean = false) {
+    fun release(clearListeners: Boolean = false) = synchronized(pollLock) {
         detachPositionMemory()
-        if (!clearListeners) return
+        if (!clearListeners) return@synchronized
+        if (!destroyed) appContext.unregisterReceiver(screenReceiver)
+        destroyed = true
 
         positionJob?.cancel()
         positionJob = null
@@ -129,8 +155,9 @@ internal class PlayerEventDispatcher : IActivePlayerListener.Stub() {
 
     /** 重新启动位置轮询（每次绑定共享内存时调用）。 */
     private fun restartPositionPoll() {
-        if (positionBuffer == null) return
         positionJob?.cancel()
+        positionJob = null
+        if (destroyed || !playing || !interactive || listeners.isEmpty() || positionBuffer == null) return
         positionJob = scope.launch { readPositions() }
     }
 

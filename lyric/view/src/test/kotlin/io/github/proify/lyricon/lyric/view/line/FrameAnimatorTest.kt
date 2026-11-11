@@ -28,6 +28,7 @@ class FrameAnimatorTest {
             shouldRun = { visible && animating },
             post = { posted = it },
             removePost = { if (posted === it) posted = null },
+            frameIntervalNanos = 33_333_333L,
             scheduleFrame = { _, _ -> schedules++ },
             cancelFrame = { cancellations++ },
         )

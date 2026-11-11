@@ -20,6 +20,7 @@ internal class FrameAnimator(
     private val shouldRun: () -> Boolean,
     private val post: (Runnable) -> Unit,
     private val removePost: (Runnable) -> Unit,
+    private val frameIntervalNanos: Long = 0L,
     private val scheduleFrame: (Choreographer.FrameCallback, Long) -> Unit = { callback, delay ->
         Choreographer.getInstance().postFrameCallbackDelayed(callback, delay)
     },
@@ -29,8 +30,6 @@ internal class FrameAnimator(
 ) : Choreographer.FrameCallback {
 
     private companion object {
-        // Tiny status-bar text does not need to redraw at the display's 90/120 Hz rate.
-        const val FRAME_INTERVAL_NANOS = 33_333_333L
         const val VSYNC_TOLERANCE_NANOS = 500_000L
     }
 
@@ -67,8 +66,8 @@ internal class FrameAnimator(
         }
 
         val elapsed = if (lastFrameNanos == 0L) 0L else frameTimeNanos - lastFrameNanos
-        if (lastFrameNanos != 0L && elapsed < FRAME_INTERVAL_NANOS - VSYNC_TOLERANCE_NANOS) {
-            scheduleFrame(this, ((FRAME_INTERVAL_NANOS - elapsed) / 1_000_000L - 1).coerceAtLeast(0))
+        if (lastFrameNanos != 0L && elapsed < frameIntervalNanos - VSYNC_TOLERANCE_NANOS) {
+            scheduleFrame(this, ((frameIntervalNanos - elapsed) / 1_000_000L - 1).coerceAtLeast(0))
             return
         }
         lastFrameNanos = frameTimeNanos
@@ -80,7 +79,7 @@ internal class FrameAnimator(
 
         if (running && shouldRun()) {
             // Leave the next vsync to Android; preserve real elapsed time for scroll/highlight.
-            scheduleFrame(this, FRAME_INTERVAL_NANOS / 1_000_000L - 1)
+            scheduleFrame(this, (frameIntervalNanos / 1_000_000L - 1).coerceAtLeast(0))
         } else {
             stop()
         }
