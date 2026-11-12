@@ -7,18 +7,17 @@
 package io.github.proify.lyricon.xposed.systemui.lyric
 
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ProviderInfo
 import io.github.proify.lyricon.xposed.systemui.lyric.processor.LyricDataProcessor
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 歌词数据调度中枢
@@ -30,27 +29,41 @@ object LyricDataHub : ActivePlayerListener {
     private val listeners = CopyOnWriteArraySet<ActivePlayerListener>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { io.github.proify.lyricon.common.util.ReloadJobs.track(it) }
 
-    /** 状态版本号，用于在异步恢复后校验数据是否已过时 */
-    private val versionCounter = AtomicInteger(0)
-
-    /** 缓存当前的原始歌曲，用于配置变更时重走流程 */
-    private var cachedRawSong: Song? = null
-
-    /** 当前执行中的流水线任务 */
-    private var activePipelineJob: Job? = null
-
-    /** 当前活动的提供者信息 */
-    private var providerInfo: ProviderInfo? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var closed = false
+    @Volatile private var providerInfo: ProviderInfo? = null
+    private val processing = SongProcessingSession(
+        scope = scope,
+        process = { song, emit ->
+            val style = LyricPrefs.getLyricStyle()
+            val prepared = LyricDataProcessor.executePreProcessing(song)
+            emit(LyricDataProcessor.executeDisplayProcessing(prepared, style))
+            val enhanced = LyricDataProcessor.executePostProcessingPipeline(prepared, style)
+            emit(LyricDataProcessor.executeDisplayProcessing(enhanced, style))
+        },
+        deliver = { song -> listeners.forEach { it.onSongChanged(song) } },
+        onError = { Log.e(TAG, "Song processing failed", it) },
+    )
 
     fun providerSnapshot(): String? = providerInfo?.let { io.github.proify.android.extensions.json.encodeToString(it) }
 
     fun close() {
-        versionCounter.incrementAndGet()
-        activePipelineJob?.cancel()
-        scope.coroutineContext[Job]?.cancel()
-        listeners.clear()
-        cachedRawSong = null
-        providerInfo = null
+        closed = true
+        scope.cancel()
+        io.github.proify.lyricon.xposed.hook.ReloadResources.onMain {
+            mainHandler.removeCallbacksAndMessages(null)
+            processing.invalidate()
+            listeners.clear()
+            providerInfo = null
+        }
+    }
+
+    private fun onMain(action: () -> Unit) {
+        if (closed || io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
+        if (Looper.myLooper() == Looper.getMainLooper()) action()
+        else mainHandler.post {
+            if (!closed && !io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) action()
+        }
     }
 
     fun addListener(listener: ActivePlayerListener) {
@@ -61,92 +74,18 @@ object LyricDataHub : ActivePlayerListener {
         listeners.remove(listener)
     }
 
-    /**
-     * 启动后台加工流水线。
-     * 所有歌词加工都在后台协程执行，避免阻塞播放器回调线程。
-     * @param rawSong 待加工的原始歌曲
-     */
-    private fun runProcessingPipeline(rawSong: Song?) {
-        if (io.github.proify.lyricon.xposed.hook.ReloadResources.retiring) return
-        val song = rawSong?.deepCopy()
-        val currentVersion = versionCounter.incrementAndGet()
-        activePipelineJob?.cancel()
+    fun reprocessCurrentSong() = onMain { processing.reprocess() }
 
-        activePipelineJob = scope.launch {
-            try {
-                if (song == null) {
-                    if (isCurrentVersion(currentVersion)) dispatchSong(null)
-                    return@launch
-                }
-
-                val style = LyricPrefs.getLyricStyle()
-
-                // 1. 后台前置加工：处理繁简、屏蔽词等基础显示数据
-                val preProcessed = LyricDataProcessor.executePreProcessing(song)
-                if (!isCurrentVersion(currentVersion)) return@launch
-
-                // 第一次分发：基础处理完成后尽快刷新 UI
-                dispatchSong(LyricDataProcessor.executeDisplayProcessing(preProcessed, style))
-
-                // 2. 后台后置流水线：处理 AI 翻译等耗时扩展
-                val finalSong =
-                    LyricDataProcessor.executePostProcessingPipeline(preProcessed, style)
-
-                if (isCurrentVersion(currentVersion)) {
-                    dispatchSong(LyricDataProcessor.executeDisplayProcessing(finalSong, style))
-                } else {
-                    logOutdatedPipeline(currentVersion, finalSong)
-                }
-            } catch (e: CancellationException) {
-                Log.d(TAG, "Pipeline $currentVersion cancelled. $e")
-            } catch (e: Exception) {
-                Log.e(TAG, "Pipeline $currentVersion error", e)
-            }
-        }
-    }
-
-    private fun isCurrentVersion(version: Int): Boolean = version == versionCounter.get()
-
-    private fun logOutdatedPipeline(version: Int, song: Song) {
-        Log.d(
-            TAG,
-            "Pipeline requestVersion:$version, nowVersion:${versionCounter.get()} skipped. ${song.name}"
-        )
-    }
-
-    /**
-     * 重走加工流程
-     * 当配置（繁简、AI 开关、翻译模式）变更时调用，无需切歌即可应用新设置。
-     */
-    fun reprocessCurrentSong() {
-        runProcessingPipeline(cachedRawSong)
-    }
-
-    // --- ActivePlayerListener 触发点 ---
-
-    override fun onSongChanged(song: Song?) {
-        this.cachedRawSong = song?.deepCopy()
-        runProcessingPipeline(song)
-    }
-
-    private var lastDispatchSongId = 0
-    private fun dispatchSong(song: Song?) {
-        val normalize = song?.deepCopy()?.normalize()
-
-        val hashCode = normalize?.hashCode() ?: 0
-        if (hashCode == lastDispatchSongId) return
-        lastDispatchSongId = hashCode
-
-        listeners.forEach { it.onSongChanged(normalize) }
-    }
+    override fun onSongChanged(song: Song?) = onMain { processing.replace(song) }
 
     // --- 纯状态透传 (不涉及加工) ---
 
-    override fun onReceiveText(text: String?) {
+    override fun onReceiveText(text: String?) = onMain {
+        processing.invalidate()
         listeners.forEach { it.onReceiveText(text) }
     }
 
-    override fun onPlaybackStateChanged(isPlaying: Boolean) {
+    override fun onPlaybackStateChanged(isPlaying: Boolean) = onMain {
         listeners.forEach { it.onPlaybackStateChanged(isPlaying) }
     }
 
@@ -154,19 +93,21 @@ object LyricDataHub : ActivePlayerListener {
         listeners.forEach { it.onPositionChanged(position) }
     }
 
-    override fun onSeekTo(position: Long) {
+    override fun onSeekTo(position: Long) = onMain {
         listeners.forEach { it.onSeekTo(position) }
     }
 
-    override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) {
+    override fun onDisplayTranslationChanged(isDisplayTranslation: Boolean) = onMain {
         listeners.forEach { it.onDisplayTranslationChanged(isDisplayTranslation) }
     }
 
-    override fun onDisplayRomaChanged(isDisplayRoma: Boolean) {
+    override fun onDisplayRomaChanged(isDisplayRoma: Boolean) = onMain {
         listeners.forEach { it.onDisplayRomaChanged(isDisplayRoma) }
     }
 
-    override fun onActiveProviderChanged(providerInfo: ProviderInfo?) {
+    override fun onActiveProviderChanged(providerInfo: ProviderInfo?) = onMain {
+        if (this.providerInfo == providerInfo) return@onMain
+        processing.invalidate()
         this.providerInfo = providerInfo
         listeners.forEach { it.onActiveProviderChanged(providerInfo) }
     }

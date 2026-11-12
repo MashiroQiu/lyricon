@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.view.View
 import io.github.proify.lyricon.xposed.systemui.hook.MiuiIslandHooker
 import android.os.Handler
+import java.util.concurrent.atomic.AtomicBoolean
 import io.github.proify.android.extensions.crc32
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.lyric.style.LyricStyle
@@ -72,7 +73,9 @@ object LyricViewController : ActivePlayerListener,
     /** * 高频进度更新任务。
      * 使用单例 Runnable 减少 GC 压力，仅在进度变更时由主线程调度。
      */
+    private val frameUpdatePending = AtomicBoolean(false)
     private val frameUpdater = Runnable {
+        frameUpdatePending.set(false)
         val controllers = StatusBarViewManager.controllers
         for (i in controllers.indices) {
             controllers[i].lyricView.setPosition(currentLogicPosition)
@@ -102,7 +105,7 @@ object LyricViewController : ActivePlayerListener,
      * @param song 新歌曲对象，若停止播放则为 null
      */
     override fun onSongChanged(song: Song?) {
-        YLog.info(TAG, "onSongChanged: $song")
+        YLog.info(TAG, "onSongChanged: id=${song?.id}, name=${song?.name}, lines=${song?.lyrics?.size ?: 0}")
         this.currentSong = song
 
         updateAllControllers {
@@ -135,6 +138,11 @@ object LyricViewController : ActivePlayerListener,
         YLog.info(TAG, "onActiveProviderChanged: $providerInfo")
 
         this.activePackage = providerInfo?.playerPackageName.orEmpty()
+        currentSong = null
+        currentLogicPosition = 0L
+        isPlaying = false
+        mainHandler.removeCallbacks(frameUpdater)
+        frameUpdatePending.set(false)
         LyricPrefs.activePackageName = this.activePackage
 
         updateAllControllers {
@@ -161,7 +169,9 @@ object LyricViewController : ActivePlayerListener,
     override fun onPositionChanged(position: Long) {
         this.currentLogicPosition = position
         // 进度更新极其频繁，直接 post 到 Handler
-        mainHandler.post(frameUpdater)
+        if (frameUpdatePending.compareAndSet(false, true) && !mainHandler.post(frameUpdater)) {
+            frameUpdatePending.set(false)
+        }
     }
 
     /**
