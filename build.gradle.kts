@@ -11,8 +11,8 @@ plugins {
 }
 
 extra["appPackageName"] = "io.github.proify.lyricon"
-extra["appVersionCode"] = 58
-extra["appVersionName"] = "1.0.40.rc-xy21-hotreload-render-r2"
+extra["appVersionCode"] = 59
+extra["appVersionName"] = "1.0.40.rc-xy21-hotreload-stale-r3"
 extra["compileSdkVersion"] = 37
 extra["targetSdkVersion"] = 37
 extra["minSdkVersion"] = 29
